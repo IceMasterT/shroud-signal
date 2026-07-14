@@ -1,7 +1,7 @@
 import {connectRealtime} from '@devvit/web/client'
 import * as Phaser from 'phaser'
 import type {PlayerState, RealtimeMsg} from '../shared/api.ts'
-import {WEAPON_RANGE} from '../shared/api.ts'
+import {FIRE_COOLDOWN_MS, WEAPON_RANGE} from '../shared/api.ts'
 import {
   fetchFire,
   fetchInit,
@@ -17,7 +17,6 @@ const DRAG = 0.985
 const MAX_SPEED = 260
 const TURN_SPEED = 3.6
 const MOVE_SEND_MS = 140
-const FIRE_COOLDOWN_MS = 350
 
 const SHIP_LABEL: Record<PlayerState['line'], string> = {
   fighter: 'FIGHTER',
@@ -386,11 +385,7 @@ export class SectorScene extends Phaser.Scene {
       if (now - this.lastFiredAt > FIRE_COOLDOWN_MS) {
         this.lastFiredAt = now
         this.fireLaser(this.ship.x, this.ship.y, this.ship.rotation)
-        void fetchFire({
-          x: this.ship.x,
-          y: this.ship.y,
-          rotation: this.ship.rotation,
-        })
+        void fetchFire()
       }
     }
 

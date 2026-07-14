@@ -10,7 +10,6 @@ import {
   Endpoint,
   EndpointMethod,
   type ErrorRsp,
-  type FireReq,
   type FireRsp,
   type GetCounterRsp,
   type IncCounterReq,
@@ -94,7 +93,7 @@ async function route(
         rsp = await routeScore(reqMsg)
         break
       case Endpoint.Fire:
-        rsp = await routeFire(reqMsg)
+        rsp = await routeFire()
         break
       case Endpoint.Leaderboard:
         rsp = await routeLeaderboard()
@@ -155,6 +154,13 @@ async function routeMove(reqMsg: IncomingMessage): Promise<MoveRsp | ErrorRsp> {
   if (!postId) return {error: 'no postId', status: 400}
   if (!userId) return {error: 'must be logged in', status: 401}
   const req = await readJson<MoveReq>(reqMsg)
+  if (
+    !isFiniteNumber(req.x) ||
+    !isFiniteNumber(req.y) ||
+    !isFiniteNumber(req.rotation)
+  ) {
+    return {error: 'invalid move payload', status: 400}
+  }
   await movePlayer(postId, userId, req.x, req.y, req.rotation)
   return {ok: true}
 }
@@ -178,6 +184,9 @@ async function routeScore(
   if (!userId) return {error: 'must be logged in', status: 401}
   const username = context.username ?? 'anonymous'
   const req = await readJson<ScoreReq>(reqMsg)
+  if (!isFiniteNumber(req.amount)) {
+    return {error: 'invalid score payload', status: 400}
+  }
   const score = await addScore(
     postId,
     subredditId,
@@ -188,24 +197,19 @@ async function routeScore(
   return {score}
 }
 
-async function routeFire(reqMsg: IncomingMessage): Promise<FireRsp | ErrorRsp> {
+async function routeFire(): Promise<FireRsp | ErrorRsp> {
   const postId = context.postId
   const userId = context.userId
   const subredditId = context.subredditId
   if (!postId) return {error: 'no postId', status: 400}
   if (!userId) return {error: 'must be logged in', status: 401}
   const username = context.username ?? 'anonymous'
-  const req = await readJson<FireReq>(reqMsg)
-  await fireWeapon(
-    postId,
-    subredditId,
-    userId,
-    username,
-    req.x,
-    req.y,
-    req.rotation,
-  )
+  await fireWeapon(postId, subredditId, userId, username)
   return {ok: true}
+}
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v)
 }
 
 async function routeLeaderboard(): Promise<LeaderboardRsp | ErrorRsp> {

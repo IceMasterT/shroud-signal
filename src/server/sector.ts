@@ -1,6 +1,6 @@
 import {realtime, redis} from '@devvit/web/server'
 import type {PlayerState, RealtimeMsg, ShipLine} from '../shared/api.ts'
-import {SHIP_LINES, WEAPON_RANGE} from '../shared/api.ts'
+import {FIRE_COOLDOWN_MS, SHIP_LINES, WEAPON_RANGE} from '../shared/api.ts'
 
 const START_HULL = 100
 const WORLD_HALF = 900 // spawn/clamp bounds, world units from sector center
@@ -16,6 +16,17 @@ export function sectorChannel(postId: string): string {
 
 function playersKey(postId: string): string {
   return `sector:${postId}:players`
+}
+
+/** Atomic per-player counters — hull/score are read-modify-write races if
+ * kept only in the players-hash JSON blob, so damage and scoring go through
+ * `redis.hIncrBy` on these dedicated keys instead. */
+function hullKey(postId: string): string {
+  return `sector:${postId}:hull`
+}
+
+function scoreKey(postId: string): string {
+  return `sector:${postId}:score`
 }
 
 function leaderboardKey(subredditId: string): string {
@@ -53,8 +64,13 @@ export async function getOrCreatePlayer(
     const p = JSON.parse(existing) as PlayerState
     p.username = username
     p.snoovatar = snoovatarOrNull
+    p.lastFiredAt = p.lastFiredAt ?? 0
     await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(p)})
-    return p
+    const [hull, score] = await Promise.all([
+      readHull(postId, userId),
+      readScore(postId, userId),
+    ])
+    return {...p, hull, score}
   }
   const spawn = randSpawn()
   const player: PlayerState = {
@@ -67,9 +83,24 @@ export async function getOrCreatePlayer(
     rotation: 0,
     hull: START_HULL,
     score: 0,
+    lastFiredAt: 0,
   }
-  await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(player)})
+  await Promise.all([
+    redis.hSet(playersKey(postId), {[userId]: JSON.stringify(player)}),
+    redis.hSet(hullKey(postId), {[userId]: String(START_HULL)}),
+    redis.hSet(scoreKey(postId), {[userId]: '0'}),
+  ])
   return player
+}
+
+async function readHull(postId: string, userId: string): Promise<number> {
+  const v = await redis.hGet(hullKey(postId), userId)
+  return v === undefined ? START_HULL : Number(v)
+}
+
+async function readScore(postId: string, userId: string): Promise<number> {
+  const v = await redis.hGet(scoreKey(postId), userId)
+  return v === undefined ? 0 : Number(v)
 }
 
 /** All other players currently tracked as present in this sector. */
@@ -133,15 +164,9 @@ export async function addScore(
   username: string,
   amount: number,
 ): Promise<number> {
-  const existing = await redis.hGet(playersKey(postId), userId)
-  let score = amount
-  if (existing) {
-    const player = JSON.parse(existing) as PlayerState
-    player.score += amount
-    score = player.score
-    await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(player)})
-    await broadcast(postId, {type: 'score', userId, score})
-  }
+  const isActive = await redis.hGet(playersKey(postId), userId)
+  const score = await redis.hIncrBy(scoreKey(postId), userId, amount)
+  if (isActive) await broadcast(postId, {type: 'score', userId, score})
   await redis.zIncrBy(leaderboardKey(subredditId), username, amount)
   return score
 }
@@ -158,20 +183,31 @@ export async function topPilots(
 }
 
 /**
- * Fires the shooter's weapon from (x, y) facing `rotation`. Always broadcasts
- * a visual 'shot' event; the nearest other player within range and within the
- * firing cone takes damage, scoring the shooter and respawning the target on
- * a kill.
+ * Fires the shooter's weapon. Deliberately takes no client-supplied position —
+ * it fires from the shooter's own authoritative last-known state (as recorded
+ * by `movePlayer`), so a client can't lie about where it is to hit someone out
+ * of range. Also enforces the fire cooldown server-side; the client's own
+ * cooldown is just for feel and is not trusted. Always broadcasts a visual
+ * 'shot' event; the nearest other player within range and within the firing
+ * cone takes damage, scoring the shooter and respawning the target on a kill.
  */
 export async function fireWeapon(
   postId: string,
   subredditId: string,
   shooterId: string,
   shooterUsername: string,
-  x: number,
-  y: number,
-  rotation: number,
 ): Promise<void> {
+  const existing = await redis.hGet(playersKey(postId), shooterId)
+  if (!existing) return
+  const shooter = JSON.parse(existing) as PlayerState
+
+  const now = Date.now()
+  const lastFiredAt = shooter.lastFiredAt ?? 0
+  if (now - lastFiredAt < FIRE_COOLDOWN_MS) return
+  shooter.lastFiredAt = now
+  await redis.hSet(playersKey(postId), {[shooterId]: JSON.stringify(shooter)})
+
+  const {x, y, rotation} = shooter
   await broadcast(postId, {type: 'shot', userId: shooterId, x, y, rotation})
 
   const dirX = Math.cos(rotation - Math.PI / 2)
@@ -192,11 +228,10 @@ export async function fireWeapon(
   if (!closest) return
   const target = closest.player
 
-  const hull = Math.max(0, target.hull - HIT_DAMAGE)
-  target.hull = hull
-  await redis.hSet(playersKey(postId), {
-    [target.userId]: JSON.stringify(target),
-  })
+  const hull = Math.max(
+    0,
+    await redis.hIncrBy(hullKey(postId), target.userId, -HIT_DAMAGE),
+  )
   await broadcast(postId, {
     type: 'hit',
     targetUserId: target.userId,
@@ -211,14 +246,18 @@ export async function fireWeapon(
 
   await addScore(postId, subredditId, shooterId, shooterUsername, KILL_SCORE)
   const spawn = randSpawn()
-  target.hull = START_HULL
-  target.x = spawn.x
-  target.y = spawn.y
-  target.rotation = 0
+  await redis.hSet(hullKey(postId), {[target.userId]: String(START_HULL)})
+  const respawned: PlayerState = {
+    ...target,
+    hull: START_HULL,
+    x: spawn.x,
+    y: spawn.y,
+    rotation: 0,
+  }
   await redis.hSet(playersKey(postId), {
-    [target.userId]: JSON.stringify(target),
+    [target.userId]: JSON.stringify(respawned),
   })
-  await broadcast(postId, {type: 'respawn', player: target})
+  await broadcast(postId, {type: 'respawn', player: respawned})
 }
 
 async function broadcast(postId: string, msg: RealtimeMsg): Promise<void> {

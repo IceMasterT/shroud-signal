@@ -27,6 +27,8 @@ export const SHIP_LINES: readonly ShipLine[] = [
 
 /** Weapon range in world units — shared so the client's laser visual matches the server's hit-detection cone. */
 export const WEAPON_RANGE = 260
+/** Minimum time between shots, enforced authoritatively server-side (client also gates on this for feel). */
+export const FIRE_COOLDOWN_MS = 350
 
 /** A player's live state within one sector (post). */
 export type PlayerState = {
@@ -39,6 +41,7 @@ export type PlayerState = {
   rotation: number
   hull: number
   score: number
+  lastFiredAt: number
 }
 
 /** Sent once on load: your own state, plus everyone else currently present. */
@@ -53,8 +56,12 @@ export type InitRsp = {
 export type MoveReq = {x: number; y: number; rotation: number}
 export type MoveRsp = {ok: true}
 
-/** Fire the ship's weapon from the given position/facing. */
-export type FireReq = {x: number; y: number; rotation: number}
+/**
+ * Fire the ship's weapon. No client-supplied geometry — the server fires
+ * from the shooter's own authoritative last-known position/facing so a
+ * client can't claim to be somewhere it isn't to snipe out of range.
+ */
+export type FireReq = Record<string, never>
 export type FireRsp = {ok: true}
 
 /** Broadcast on the realtime channel to every connected client in the sector. */
