@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Shroud Signal Battle</title>
+    <link rel="modulepreload" href="battle.js">
+    <style>
+    body {
+      margin: 0;
+      width: 100dvw;
+      height: 100dvh;
+      overflow: hidden;
+      background: #01030a;
+    }
+    #game-root {
+      width: 100%;
+      height: 100%;
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(1, 3, 10, 0.92);
+      font-family: monospace;
+      color: #eef6ff;
+      box-sizing: border-box;
+      padding: 1rem;
+    }
+    #overlay.hidden {
+      display: none;
+    }
+    .panel {
+      background: #0b0f16;
+      border: 1px solid #2a3444;
+      border-radius: 6px;
+      padding: 1.5rem;
+      display: grid;
+      gap: 0.9rem;
+      text-align: center;
+      max-width: 460px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 15px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #ff9500;
+      margin: 0;
+    }
+    p {
+      font-size: 13px;
+      line-height: 1.5;
+      color: #cdd8e6;
+      margin: 0;
+    }
+    .stat {
+      color: #ff9500;
+    }
+    .rosters {
+      display: flex;
+      gap: 1.5rem;
+      justify-content: center;
+      text-align: left;
+    }
+    .roster {
+      font-size: 12px;
+      color: #9fb4c9;
+    }
+    .roster b {
+      color: #eef6ff;
+    }
+    button {
+      font-family: monospace;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #eef6ff;
+      background: rgba(20, 26, 40, 0.75);
+      border: 1px solid #ff9500;
+      border-radius: 4px;
+      padding: 0.7rem 1.2rem;
+      cursor: pointer;
+    }
+    button:hover {
+      background: rgba(255, 149, 0, 0.18);
+    }
+    </style>
+  </head>
+  <body>
+    <div id="game-root"></div>
+    <div id="overlay" class="hidden">
+      <div class="panel"><p>Loading…</p></div>
+    </div>
+    <script src="battle.js" type="module"></script>
+  </body>
+</html>

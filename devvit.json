@@ -8,6 +8,12 @@
       },
       "game": {
         "entry": "game.html"
+      },
+      "challenge": {
+        "entry": "challenge.html"
+      },
+      "battle": {
+        "entry": "battle.html"
       }
     }
   },
@@ -27,6 +33,12 @@
         "description": "Establish a new Shroud Signal sector post in this subreddit.",
         "location": "subreddit",
         "endpoint": "/internal/on/menu/new-post"
+      },
+      {
+        "label": "Challenge a Subreddit",
+        "description": "Challenge another subreddit to a Last One Standing battle.",
+        "location": "subreddit",
+        "endpoint": "/internal/on/menu/new-challenge"
       }
     ]
   },

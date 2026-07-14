@@ -81,6 +81,7 @@ export async function getOrCreatePlayer(
     p.snoovatar = snoovatarOrNull
     p.lastLaserAt = p.lastLaserAt ?? 0
     p.lastTorpedoAt = p.lastTorpedoAt ?? 0
+    p.team = p.team ?? null
     await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(p)})
     const [hull, score] = await Promise.all([
       readHull(postId, userId),
@@ -101,6 +102,7 @@ export async function getOrCreatePlayer(
     score: 0,
     lastLaserAt: 0,
     lastTorpedoAt: 0,
+    team: null,
   }
   await Promise.all([
     redis.hSet(playersKey(postId), {[userId]: JSON.stringify(player)}),

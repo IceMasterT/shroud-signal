@@ -37,7 +37,7 @@ export const TORPEDO_COOLDOWN_MS = 1400
 
 export type WeaponMode = 'laser' | 'torpedo'
 
-/** A player's live state within one sector (post). */
+/** A player's live state within one sector (post). `team` is only set in a match arena. */
 export type PlayerState = {
   userId: string
   username: string
@@ -50,6 +50,7 @@ export type PlayerState = {
   score: number
   lastLaserAt: number
   lastTorpedoAt: number
+  team: Team | null
 }
 
 /** Sent once on load: your own state, plus everyone else currently present. */
@@ -101,6 +102,141 @@ export type LeaderboardRsp = {entries: LeaderboardEntry[]}
 export type ScoreReq = {amount: number}
 export type ScoreRsp = {score: number}
 
+// ── Shroud Signal: subreddit vs subreddit battles ───────────────────────────
+
+export type Team = 'A' | 'B'
+
+/** postData.kind tags what a given post is, read via context.postData on both client and server. */
+export type PostKind =
+  | {kind: 'sector'}
+  | {kind: 'challenge-setup'}
+  | {kind: 'challenge'; challengeId: string; role: 'challenger' | 'target'}
+  | {kind: 'match-arena'; matchId: string; side: Team}
+
+export type ChallengeStatus =
+  | 'pending'
+  | 'countered'
+  | 'accepted'
+  | 'declined'
+  | 'cancelled'
+
+/** playerCap is per team, not combined. warmupMinutes bounds the warm-up join window. */
+export type Challenge = {
+  challengeId: string
+  challengerPostId: string
+  targetPostId: string | null
+  challengerSubredditId: string
+  challengerSubredditName: string
+  targetSubredditName: string
+  playerCap: number
+  warmupMinutes: number
+  counterPlayerCap: number | null
+  counterWarmupMinutes: number | null
+  status: ChallengeStatus
+  createdAt: number
+  matchId: string | null
+  arenaUrlA: string | null
+  arenaUrlB: string | null
+}
+
+export type CreateChallengeReq = {
+  targetSubredditName: string
+  playerCap: number
+  warmupMinutes: number
+}
+export type CreateChallengeRsp = {challengeId: string}
+
+export type ChallengeAction =
+  | 'accept'
+  | 'counter'
+  | 'accept-counter'
+  | 'decline'
+export type RespondChallengeReq = {
+  challengeId: string
+  action: ChallengeAction
+  playerCap?: number
+  warmupMinutes?: number
+}
+/** `challengeStatus`, not `status` — the latter is reserved by the router for the HTTP status code. */
+export type RespondChallengeRsp = {
+  challengeStatus: ChallengeStatus
+  matchId: string | null
+}
+
+export type ChallengeStateRsp = {challenge: Challenge}
+
+export type MatchStatus =
+  | 'warmup'
+  | 'round_active'
+  | 'round_result'
+  | 'complete'
+
+/** Shared by client and server so both agree on the realtime channel name for a match. */
+export function matchChannel(matchId: string): string {
+  return `match:${matchId}`
+}
+
+export type Match = {
+  matchId: string
+  arenaPostIdA: string
+  arenaPostIdB: string
+  arenaUrlA: string
+  arenaUrlB: string
+  subredditAName: string
+  subredditBName: string
+  playerCap: number
+  warmupMinutes: number
+  status: MatchStatus
+  round: number
+  roundWinsA: number
+  roundWinsB: number
+  survivalMsA: number
+  survivalMsB: number
+  warmupEndsAt: number
+  roundStartedAt: number
+  roundEndsAt: number
+  roundResultAt: number
+  lastRoundWinner: Team | 'tie' | null
+  winner: Team | 'tie' | null
+}
+
+export type MatchStateRsp = {
+  match: Match
+  self: PlayerState | null
+  rosterA: PlayerState[]
+  rosterB: PlayerState[]
+}
+export type JoinMatchRsp = {ok: true}
+
+/** Broadcast on a match's own realtime channel (`match:{matchId}`), separate from a free-play sector's channel. */
+export type MatchMsg =
+  | {type: 'roster'; player: PlayerState}
+  | {type: 'round_start'; round: number}
+  | {type: 'move'; player: PlayerState}
+  | {
+      type: 'shot'
+      userId: string
+      x: number
+      y: number
+      rotation: number
+      mode: WeaponMode
+      travelMs: number
+    }
+  | {type: 'hit'; targetUserId: string; shooterUserId: string; hull: number}
+  | {type: 'miss'; x: number; y: number}
+  | {type: 'eliminated'; userId: string; team: Team}
+  | {
+      type: 'round_end'
+      winner: Team | 'tie'
+      roundWinsA: number
+      roundWinsB: number
+    }
+  | {type: 'match_end'; winner: Team | 'tie'}
+
+export const ROUND_MAX_MS = 5 * 60 * 1000
+export const ROUND_RESULT_DISPLAY_MS = 8000
+export const MATCH_ROUNDS_TO_WIN = 2
+
 export type Endpoint = (typeof Endpoint)[keyof typeof Endpoint]
 export const Endpoint = {
   GetCounter: 'api/counter',
@@ -111,8 +247,14 @@ export const Endpoint = {
   Score: 'api/score',
   Fire: 'api/fire',
   Leaderboard: 'api/leaderboard',
+  ChallengeCreate: 'api/challenge/create',
+  ChallengeRespond: 'api/challenge/respond',
+  ChallengeState: 'api/challenge/state',
+  MatchJoin: 'api/match/join',
+  MatchState: 'api/match/state',
   OnAppInstall: 'internal/on/app/install',
   OnMenuNewPost: 'internal/on/menu/new-post',
+  OnMenuNewChallenge: 'internal/on/menu/new-challenge',
   OnGalaxyPulse: 'internal/on/tick/pulse',
 } as const
 
@@ -125,7 +267,13 @@ export const EndpointMethod = {
   [Endpoint.Score]: 'POST',
   [Endpoint.Fire]: 'POST',
   [Endpoint.Leaderboard]: 'GET',
+  [Endpoint.ChallengeCreate]: 'POST',
+  [Endpoint.ChallengeRespond]: 'POST',
+  [Endpoint.ChallengeState]: 'GET',
+  [Endpoint.MatchJoin]: 'POST',
+  [Endpoint.MatchState]: 'GET',
   [Endpoint.OnAppInstall]: 'POST',
   [Endpoint.OnMenuNewPost]: 'POST',
+  [Endpoint.OnMenuNewChallenge]: 'POST',
   [Endpoint.OnGalaxyPulse]: 'POST',
 } as const satisfies {[endpoint: string]: 'GET' | 'POST'}
