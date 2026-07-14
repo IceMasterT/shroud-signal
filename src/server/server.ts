@@ -10,6 +10,8 @@ import {
   Endpoint,
   EndpointMethod,
   type ErrorRsp,
+  type FireReq,
+  type FireRsp,
   type GetCounterRsp,
   type IncCounterReq,
   type IncCounterRsp,
@@ -25,6 +27,7 @@ import {randomPulseLine} from './lore.ts'
 import {
   addScore,
   announceJoin,
+  fireWeapon,
   getOrCreatePlayer,
   leaveSector,
   listOtherPlayers,
@@ -41,6 +44,7 @@ type AnyRsp =
   | InitRsp
   | MoveRsp
   | ScoreRsp
+  | FireRsp
   | LeaderboardRsp
   | UiResponse
   | TriggerResponse
@@ -88,6 +92,9 @@ async function route(
         break
       case Endpoint.Score:
         rsp = await routeScore(reqMsg)
+        break
+      case Endpoint.Fire:
+        rsp = await routeFire(reqMsg)
         break
       case Endpoint.Leaderboard:
         rsp = await routeLeaderboard()
@@ -179,6 +186,26 @@ async function routeScore(
     req.amount,
   )
   return {score}
+}
+
+async function routeFire(reqMsg: IncomingMessage): Promise<FireRsp | ErrorRsp> {
+  const postId = context.postId
+  const userId = context.userId
+  const subredditId = context.subredditId
+  if (!postId) return {error: 'no postId', status: 400}
+  if (!userId) return {error: 'must be logged in', status: 401}
+  const username = context.username ?? 'anonymous'
+  const req = await readJson<FireReq>(reqMsg)
+  await fireWeapon(
+    postId,
+    subredditId,
+    userId,
+    username,
+    req.x,
+    req.y,
+    req.rotation,
+  )
+  return {ok: true}
 }
 
 async function routeLeaderboard(): Promise<LeaderboardRsp | ErrorRsp> {

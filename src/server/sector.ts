@@ -1,9 +1,14 @@
 import {realtime, redis} from '@devvit/web/server'
 import type {PlayerState, RealtimeMsg, ShipLine} from '../shared/api.ts'
-import {SHIP_LINES} from '../shared/api.ts'
+import {SHIP_LINES, WEAPON_RANGE} from '../shared/api.ts'
 
 const START_HULL = 100
 const WORLD_HALF = 900 // spawn/clamp bounds, world units from sector center
+
+const WEAPON_HALF_ANGLE = 0.3 // radians either side of facing — ~17°
+const HIT_DAMAGE = 20
+const HIT_SCORE = 10
+const KILL_SCORE = 40
 
 export function sectorChannel(postId: string): string {
   return `sector:${postId}`
@@ -150,6 +155,70 @@ export async function topPilots(
     by: 'rank',
   })
   return rows.map(r => ({username: r.member, score: r.score}))
+}
+
+/**
+ * Fires the shooter's weapon from (x, y) facing `rotation`. Always broadcasts
+ * a visual 'shot' event; the nearest other player within range and within the
+ * firing cone takes damage, scoring the shooter and respawning the target on
+ * a kill.
+ */
+export async function fireWeapon(
+  postId: string,
+  subredditId: string,
+  shooterId: string,
+  shooterUsername: string,
+  x: number,
+  y: number,
+  rotation: number,
+): Promise<void> {
+  await broadcast(postId, {type: 'shot', userId: shooterId, x, y, rotation})
+
+  const dirX = Math.cos(rotation - Math.PI / 2)
+  const dirY = Math.sin(rotation - Math.PI / 2)
+  const others = await listOtherPlayers(postId, shooterId)
+
+  let closest: {player: PlayerState; distance: number} | undefined
+  for (const p of others) {
+    const dx = p.x - x
+    const dy = p.y - y
+    const distance = Math.hypot(dx, dy)
+    if (distance === 0 || distance > WEAPON_RANGE) continue
+    const dot = (dx / distance) * dirX + (dy / distance) * dirY
+    const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
+    if (angle > WEAPON_HALF_ANGLE) continue
+    if (!closest || distance < closest.distance) closest = {player: p, distance}
+  }
+  if (!closest) return
+  const target = closest.player
+
+  const hull = Math.max(0, target.hull - HIT_DAMAGE)
+  target.hull = hull
+  await redis.hSet(playersKey(postId), {
+    [target.userId]: JSON.stringify(target),
+  })
+  await broadcast(postId, {
+    type: 'hit',
+    targetUserId: target.userId,
+    shooterUserId: shooterId,
+    hull,
+  })
+
+  if (hull > 0) {
+    await addScore(postId, subredditId, shooterId, shooterUsername, HIT_SCORE)
+    return
+  }
+
+  await addScore(postId, subredditId, shooterId, shooterUsername, KILL_SCORE)
+  const spawn = randSpawn()
+  target.hull = START_HULL
+  target.x = spawn.x
+  target.y = spawn.y
+  target.rotation = 0
+  await redis.hSet(playersKey(postId), {
+    [target.userId]: JSON.stringify(target),
+  })
+  await broadcast(postId, {type: 'respawn', player: target})
 }
 
 async function broadcast(postId: string, msg: RealtimeMsg): Promise<void> {

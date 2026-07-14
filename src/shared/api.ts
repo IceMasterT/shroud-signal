@@ -25,6 +25,9 @@ export const SHIP_LINES: readonly ShipLine[] = [
   'tender',
 ]
 
+/** Weapon range in world units — shared so the client's laser visual matches the server's hit-detection cone. */
+export const WEAPON_RANGE = 260
+
 /** A player's live state within one sector (post). */
 export type PlayerState = {
   userId: string
@@ -50,6 +53,10 @@ export type InitRsp = {
 export type MoveReq = {x: number; y: number; rotation: number}
 export type MoveRsp = {ok: true}
 
+/** Fire the ship's weapon from the given position/facing. */
+export type FireReq = {x: number; y: number; rotation: number}
+export type FireRsp = {ok: true}
+
 /** Broadcast on the realtime channel to every connected client in the sector. */
 export type RealtimeMsg =
   | {type: 'join'; player: PlayerState}
@@ -57,6 +64,9 @@ export type RealtimeMsg =
   | {type: 'leave'; userId: string}
   | {type: 'score'; userId: string; score: number}
   | {type: 'pulse'; text: string}
+  | {type: 'shot'; userId: string; x: number; y: number; rotation: number}
+  | {type: 'hit'; targetUserId: string; shooterUserId: string; hull: number}
+  | {type: 'respawn'; player: PlayerState}
 
 /** Top pilots for the current subreddit, by score. */
 export type LeaderboardEntry = {username: string; score: number}
@@ -74,6 +84,7 @@ export const Endpoint = {
   Move: 'api/move',
   Leave: 'api/leave',
   Score: 'api/score',
+  Fire: 'api/fire',
   Leaderboard: 'api/leaderboard',
   OnAppInstall: 'internal/on/app/install',
   OnMenuNewPost: 'internal/on/menu/new-post',
@@ -87,6 +98,7 @@ export const EndpointMethod = {
   [Endpoint.Move]: 'POST',
   [Endpoint.Leave]: 'POST',
   [Endpoint.Score]: 'POST',
+  [Endpoint.Fire]: 'POST',
   [Endpoint.Leaderboard]: 'GET',
   [Endpoint.OnAppInstall]: 'POST',
   [Endpoint.OnMenuNewPost]: 'POST',

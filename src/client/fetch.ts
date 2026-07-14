@@ -1,5 +1,7 @@
 import {
   Endpoint,
+  type FireReq,
+  type FireRsp,
   type GetCounterRsp,
   type IncCounterReq,
   type IncCounterRsp,
@@ -115,6 +117,10 @@ export function fetchLeave(): Promise<Response> {
 
 export function fetchScore(req: ScoreReq): Promise<ScoreRsp | undefined> {
   return postJson<ScoreReq, ScoreRsp>(Endpoint.Score, req)
+}
+
+export function fetchFire(req: FireReq): Promise<FireRsp | undefined> {
+  return postJson<FireReq, FireRsp>(Endpoint.Fire, req)
 }
 
 export function fetchLeaderboard(): Promise<LeaderboardRsp | undefined> {

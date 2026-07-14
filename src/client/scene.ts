@@ -1,7 +1,9 @@
 import {connectRealtime} from '@devvit/web/client'
 import * as Phaser from 'phaser'
 import type {PlayerState, RealtimeMsg} from '../shared/api.ts'
+import {WEAPON_RANGE} from '../shared/api.ts'
 import {
+  fetchFire,
   fetchInit,
   fetchLeaderboard,
   fetchLeave,
@@ -15,6 +17,7 @@ const DRAG = 0.985
 const MAX_SPEED = 260
 const TURN_SPEED = 3.6
 const MOVE_SEND_MS = 140
+const FIRE_COOLDOWN_MS = 350
 
 const SHIP_LABEL: Record<PlayerState['line'], string> = {
   fighter: 'FIGHTER',
@@ -42,7 +45,9 @@ export class SectorScene extends Phaser.Scene {
     down: Phaser.Input.Keyboard.Key
     left: Phaser.Input.Keyboard.Key
     right: Phaser.Input.Keyboard.Key
+    fire: Phaser.Input.Keyboard.Key
   }
+  private lastFiredAt = 0
   private others = new Map<string, RemoteShip>()
   private hudName!: Phaser.GameObjects.Text
   private hudScore!: Phaser.GameObjects.Text
@@ -92,6 +97,7 @@ export class SectorScene extends Phaser.Scene {
       down: kb.addKey(Phaser.Input.Keyboard.KeyCodes.S),
       left: kb.addKey(Phaser.Input.Keyboard.KeyCodes.A),
       right: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+      fire: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
     }
 
     this.hudName = this.add
@@ -131,7 +137,7 @@ export class SectorScene extends Phaser.Scene {
       .setDepth(50)
       .setAlpha(0)
     this.add
-      .text(W - 12, H - 12, '[L] LEADERBOARD', {
+      .text(W - 12, H - 12, '[SPACE] FIRE  ·  [L] LEADERBOARD', {
         fontFamily: 'monospace',
         fontSize: '10px',
         color: '#446688',
@@ -244,7 +250,38 @@ export class SectorScene extends Phaser.Scene {
   }
 
   private updateScoreHud(): void {
-    if (this.player) this.hudScore.setText(`SCORE  ${this.player.score}`)
+    if (this.player)
+      this.hudScore.setText(
+        `SCORE  ${this.player.score}   HULL  ${this.player.hull}`,
+      )
+  }
+
+  private fireLaser(x: number, y: number, rotation: number): void {
+    const dirAngle = rotation - Math.PI / 2
+    const midX = x + Math.cos(dirAngle) * (WEAPON_RANGE / 2)
+    const midY = y + Math.sin(dirAngle) * (WEAPON_RANGE / 2)
+    const beam = this.add
+      .rectangle(midX, midY, WEAPON_RANGE, 3, 0xff5566, 0.9)
+      .setRotation(dirAngle)
+      .setDepth(18)
+    this.tweens.add({
+      targets: beam,
+      alpha: 0,
+      duration: 180,
+      onComplete: () => beam.destroy(),
+    })
+  }
+
+  private flashDamage(): void {
+    if (!this.ship) return
+    this.tweens.add({targets: this.ship, alpha: 0.3, duration: 80, yoyo: true})
+  }
+
+  private flashRemoteHit(userId: string): void {
+    const r = this.others.get(userId)
+    if (!r) return
+    r.sprite.setTint(0xff3344).setTintMode(Phaser.TintModes.FILL)
+    this.time.delayedCall(120, () => r.sprite.clearTint())
   }
 
   private updateCountHud(): void {
@@ -302,6 +339,28 @@ export class SectorScene extends Phaser.Scene {
       }
     } else if (msg.type === 'pulse') {
       this.showPulse(msg.text)
+    } else if (msg.type === 'shot') {
+      if (msg.userId !== this.player?.userId)
+        this.fireLaser(msg.x, msg.y, msg.rotation)
+    } else if (msg.type === 'hit') {
+      if (msg.targetUserId === this.player?.userId) {
+        if (this.player) {
+          this.player.hull = msg.hull
+          this.updateScoreHud()
+          this.flashDamage()
+        }
+      } else {
+        this.flashRemoteHit(msg.targetUserId)
+      }
+    } else if (msg.type === 'respawn') {
+      if (msg.player.userId === this.player?.userId) {
+        this.player = msg.player
+        this.ship.setPosition(msg.player.x, msg.player.y)
+        this.ship.rotation = msg.player.rotation
+        this.updateScoreHud()
+      } else {
+        this.spawnRemote(msg.player)
+      }
     }
   }
 
@@ -320,6 +379,19 @@ export class SectorScene extends Phaser.Scene {
         Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * 0.5 * dt
       this.velY -=
         Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * 0.5 * dt
+    }
+
+    if (this.keys.fire.isDown) {
+      const now = performance.now()
+      if (now - this.lastFiredAt > FIRE_COOLDOWN_MS) {
+        this.lastFiredAt = now
+        this.fireLaser(this.ship.x, this.ship.y, this.ship.rotation)
+        void fetchFire({
+          x: this.ship.x,
+          y: this.ship.y,
+          rotation: this.ship.rotation,
+        })
+      }
     }
 
     const speed = Math.hypot(this.velX, this.velY)
