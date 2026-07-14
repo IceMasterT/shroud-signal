@@ -8,7 +8,7 @@ No login flow, no accounts, no external database: player identity, position, com
 
 ## About this project
 
-[Mentaverse](https://mentagame.com) ([source](https://github.com/IceMasterT/mentaverse-phaser)), the game this ship art and lore comes from, is my own earlier project, also built in Phaser. Shroud Signal is the same developer reusing his own assets for a hackathon, not someone else's work.
+The ship art and lore here come from [Mentaverse](https://mentagame.com) ([source](https://github.com/IceMasterT/mentaverse-phaser)), my other game, also built in Phaser. Same developer, same universe, just me borrowing my own assets for a hackathon. Nothing here is lifted from anyone else's work.
 
 I just really like Phaser 3 and wanted to build something fun for Reddit's hackathon with Phaser, to show how versatile and cool the engine actually is.
 
