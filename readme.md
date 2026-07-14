@@ -14,7 +14,7 @@ Shroud Signal is a spin-off of [Mentaverse](https://mentagame.com), another game
 
 I just really like Phaser 3 and wanted to build something fun for Reddit's hackathon with Phaser, to show how versatile and cool the engine actually is.
 
-I'm IceMasterT (u/Capital_Vegetable_80), and I've got a few more Phaser games in the works:
+I'm IceMasterT ([GitHub](https://github.com/icemastert), u/Capital_Vegetable_80), and I've got a few more Phaser games in the works:
 
 - A 2.5D beat 'em up starring princesses who are done waiting around to be rescued. Sick of playing damsel in distress, they band together and start rescuing other princesses instead, and when their own kingdom finally gets captured, they flip the script completely: this time it's the princesses saving the prince, and the kingdom, themselves.
 - **Viral Vendetta**, a PvP Pokemon/Final Fantasy style battler currently in testing. You fight toxic internet personalities in ridiculous turn based duels, and winning means either torching their reputation or crushing their ego into dust. Petty, cathartic, and genuinely funny.
