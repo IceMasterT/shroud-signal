@@ -6,6 +6,8 @@ Post **"Chart a New Sector"** from a subreddit's menu and anyone who opens it sp
 
 No login flow, no accounts, no external database: player identity, position, combat, and scoring all live on Devvit's own Redis, realtime pub/sub, and scheduler primitives, inside the Reddit post that spawned them.
 
+A mod can also run **"Challenge a Subreddit"** to pit their community against another one: set a player cap per team and a warm-up window, the other subreddit accepts or counters, and once accepted both subreddits get a synced arena post for a best-of-3 Last One Standing series. Eliminated pilots sit out the rest of that round; if a round times out with survivors on both sides it's a tie, and cumulative survival time breaks a tied series.
+
 ## About this project
 
 The ship art and lore here come from [Mentaverse](https://mentagame.com) ([source](https://github.com/IceMasterT/mentaverse-phaser)), my other game, also built in Phaser. Same developer, same universe, just me borrowing my own assets for a hackathon. Nothing here is lifted from anyone else's work.
