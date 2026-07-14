@@ -1,6 +1,6 @@
 ## Shroud Signal
 
-A shared sector of space, live inside your subreddit. Built for the [Phaser × Reddit hackathon](https://phaser.io/news/2026/06/reddit-and-phaser-launch-a-40-000-game-dev-hackathon) on [Devvit](https://developers.reddit.com/), reusing ship art and lore from [Mentaverse](https://github.com/IceMasterT/mentaverse-phaser).
+A shared sector of space, live inside your subreddit. Built for the [Phaser × Reddit hackathon](https://phaser.io/news/2026/06/reddit-and-phaser-launch-a-40-000-game-dev-hackathon) on [Devvit](https://developers.reddit.com/). A spin-off of [Mentaverse](https://mentagame.com), another game I've been developing, reusing its ship art and lore.
 
 Post **"Chart a New Sector"** from a subreddit's menu and anyone who opens it spawns a ship, one of five lines pulled from Mentaverse's starter fleet, flying in real time alongside everyone else currently in that post. Fire on other pilots (`Space` for lasers, `Shift` for torpedoes), climb the subreddit-wide leaderboard, and listen for the ambient "galaxy pulse," a scheduled rumor about the Shroud broadcast to every active sector every five minutes.
 
@@ -10,7 +10,7 @@ A mod can also run **"Challenge a Subreddit"** to pit their community against an
 
 ## About this project
 
-The ship art and lore here come from [Mentaverse](https://mentagame.com) ([source](https://github.com/IceMasterT/mentaverse-phaser)), my other game, also built in Phaser. Same developer, same universe, just me borrowing my own assets for a hackathon. Nothing here is lifted from anyone else's work.
+Shroud Signal is a spin-off of [Mentaverse](https://mentagame.com), another game I've been developing, also built in Phaser. Same developer, same universe, just me borrowing my own assets for a hackathon. Nothing here is lifted from anyone else's work.
 
 I just really like Phaser 3 and wanted to build something fun for Reddit's hackathon with Phaser, to show how versatile and cool the engine actually is.
 
