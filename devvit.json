@@ -12,6 +12,9 @@
     }
   },
   "server": {},
+  "marketingAssets": {
+    "icon": "public/marketing/icon.png"
+  },
   "permissions": {
     "redis": true,
     "realtime": true,

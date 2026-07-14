@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Splash</title>
+    <title>Shroud Signal</title>
     <link rel="modulepreload" href="splash.js">
     <style>
     body {
@@ -13,18 +13,51 @@
       overflow: hidden;
       display: grid;
       place-items: center;
+      background: #05070c url('assets/splash.webp') center / cover no-repeat;
+      font-family: system-ui, sans-serif;
     }
     main {
       display: grid;
-      gap: 1rem;
+      gap: 1.5rem;
       justify-items: center;
+      padding: 2rem;
+      background: linear-gradient(
+        180deg,
+        rgba(5, 7, 12, 0) 0%,
+        rgba(5, 7, 12, 0.55) 55%,
+        rgba(5, 7, 12, 0.85) 100%
+      );
+      width: 100%;
+      height: 100%;
+      align-content: end;
+      box-sizing: border-box;
+    }
+    img#logo {
+      width: 220px;
+      height: auto;
+      filter: drop-shadow(0 2px 14px rgba(0, 0, 0, 0.85));
+    }
+    button#start-btn {
+      font-family: monospace;
+      font-size: 15px;
+      letter-spacing: 0.12em;
+      color: #eef6ff;
+      background: rgba(20, 26, 40, 0.75);
+      border: 1px solid #ff9500;
+      border-radius: 4px;
+      padding: 0.8rem 2.2rem;
+      cursor: pointer;
+      text-transform: uppercase;
+    }
+    button#start-btn:hover {
+      background: rgba(255, 149, 0, 0.18);
     }
     </style>
   </head>
   <body>
     <main>
-      <img src="/snoo.png" width="201" height="200" alt="Snoo">
-      <button id="start-btn" type="button">Start</button>
+      <img id="logo" src="assets/logo.png" alt="Shroud Signal">
+      <button id="start-btn" type="button">Enter the Sector</button>
     </main>
     <script src="splash.js" type="module"></script>
   </body>
