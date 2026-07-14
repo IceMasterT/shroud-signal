@@ -1,0 +1,47 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "shroud-signal",
+  "post": {
+    "entrypoints": {
+      "default": {
+        "entry": "splash.html"
+      },
+      "game": {
+        "entry": "game.html"
+      }
+    }
+  },
+  "server": {},
+  "permissions": {
+    "redis": true,
+    "realtime": true,
+    "reddit": true
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "Chart a New Sector",
+        "description": "Establish a new Shroud Signal sector post in this subreddit.",
+        "location": "subreddit",
+        "endpoint": "/internal/on/menu/new-post"
+      }
+    ]
+  },
+  "triggers": {
+    "onAppInstall": "/internal/on/app/install"
+  },
+  "scheduler": {
+    "tasks": {
+      "galaxyPulse": {
+        "endpoint": "/internal/on/tick/pulse",
+        "cron": "*/5 * * * *"
+      }
+    }
+  },
+  "scripts": {
+    "dev": "npm run watch"
+  },
+  "dev": {
+    "subreddit": "shroud_signal_dev"
+  }
+}
