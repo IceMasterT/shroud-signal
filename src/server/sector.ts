@@ -1,14 +1,29 @@
 import {realtime, redis} from '@devvit/web/server'
-import type {PlayerState, RealtimeMsg, ShipLine} from '../shared/api.ts'
-import {FIRE_COOLDOWN_MS, SHIP_LINES, WEAPON_RANGE} from '../shared/api.ts'
+import type {
+  PlayerState,
+  RealtimeMsg,
+  ShipLine,
+  WeaponMode,
+} from '../shared/api.ts'
+import {
+  LASER_COOLDOWN_MS,
+  LASER_RANGE,
+  SHIP_LINES,
+  TORPEDO_COOLDOWN_MS,
+  TORPEDO_RANGE,
+  TORPEDO_SPEED,
+} from '../shared/api.ts'
 
 const START_HULL = 100
 const WORLD_HALF = 900 // spawn/clamp bounds, world units from sector center
 
-const WEAPON_HALF_ANGLE = 0.3 // radians either side of facing — ~17°
-const HIT_DAMAGE = 20
+const LASER_HALF_ANGLE = 0.3 // radians either side of facing — ~17°
+const LASER_DAMAGE = 20
 const HIT_SCORE = 10
 const KILL_SCORE = 40
+
+const TORPEDO_DAMAGE = 45
+const TORPEDO_IMPACT_RADIUS = 70 // how far off the flight line a target may be and still be caught
 
 export function sectorChannel(postId: string): string {
   return `sector:${postId}`
@@ -64,7 +79,8 @@ export async function getOrCreatePlayer(
     const p = JSON.parse(existing) as PlayerState
     p.username = username
     p.snoovatar = snoovatarOrNull
-    p.lastFiredAt = p.lastFiredAt ?? 0
+    p.lastLaserAt = p.lastLaserAt ?? 0
+    p.lastTorpedoAt = p.lastTorpedoAt ?? 0
     await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(p)})
     const [hull, score] = await Promise.all([
       readHull(postId, userId),
@@ -83,7 +99,8 @@ export async function getOrCreatePlayer(
     rotation: 0,
     hull: START_HULL,
     score: 0,
-    lastFiredAt: 0,
+    lastLaserAt: 0,
+    lastTorpedoAt: 0,
   }
   await Promise.all([
     redis.hSet(playersKey(postId), {[userId]: JSON.stringify(player)}),
@@ -187,50 +204,147 @@ export async function topPilots(
  * it fires from the shooter's own authoritative last-known state (as recorded
  * by `movePlayer`), so a client can't lie about where it is to hit someone out
  * of range. Also enforces the fire cooldown server-side; the client's own
- * cooldown is just for feel and is not trusted. Always broadcasts a visual
- * 'shot' event; the nearest other player within range and within the firing
- * cone takes damage, scoring the shooter and respawning the target on a kill.
+ * cooldown is just for feel and is not trusted.
+ *
+ * Laser: instant hitscan — the nearest other player within range and within
+ * the firing cone takes damage immediately.
+ *
+ * Torpedo: a genuine travel-time projectile. It always flies the full
+ * TORPEDO_RANGE in a straight line; impact is resolved after that travel
+ * time elapses (a detached `setTimeout` — safe here since this is a
+ * long-lived `http.Server` process, not a per-request cold start), and
+ * whoever is near the endpoint *at that later moment* takes the hit — not
+ * whoever was aimed at when it launched, so it can be dodged.
  */
 export async function fireWeapon(
   postId: string,
   subredditId: string,
   shooterId: string,
   shooterUsername: string,
+  mode: WeaponMode,
 ): Promise<void> {
   const existing = await redis.hGet(playersKey(postId), shooterId)
   if (!existing) return
   const shooter = JSON.parse(existing) as PlayerState
 
   const now = Date.now()
-  const lastFiredAt = shooter.lastFiredAt ?? 0
-  if (now - lastFiredAt < FIRE_COOLDOWN_MS) return
-  shooter.lastFiredAt = now
+  if (mode === 'laser') {
+    if (now - (shooter.lastLaserAt ?? 0) < LASER_COOLDOWN_MS) return
+    shooter.lastLaserAt = now
+  } else {
+    if (now - (shooter.lastTorpedoAt ?? 0) < TORPEDO_COOLDOWN_MS) return
+    shooter.lastTorpedoAt = now
+  }
   await redis.hSet(playersKey(postId), {[shooterId]: JSON.stringify(shooter)})
 
   const {x, y, rotation} = shooter
-  await broadcast(postId, {type: 'shot', userId: shooterId, x, y, rotation})
-
   const dirX = Math.cos(rotation - Math.PI / 2)
   const dirY = Math.sin(rotation - Math.PI / 2)
-  const others = await listOtherPlayers(postId, shooterId)
 
+  if (mode === 'laser') {
+    await broadcast(postId, {
+      type: 'shot',
+      userId: shooterId,
+      x,
+      y,
+      rotation,
+      mode,
+      travelMs: 0,
+    })
+
+    const others = await listOtherPlayers(postId, shooterId)
+    let closest: {player: PlayerState; distance: number} | undefined
+    for (const p of others) {
+      const dx = p.x - x
+      const dy = p.y - y
+      const distance = Math.hypot(dx, dy)
+      if (distance === 0 || distance > LASER_RANGE) continue
+      const dot = (dx / distance) * dirX + (dy / distance) * dirY
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
+      if (angle > LASER_HALF_ANGLE) continue
+      if (!closest || distance < closest.distance)
+        closest = {player: p, distance}
+    }
+    if (!closest) return
+    await applyDamage(
+      postId,
+      subredditId,
+      shooterId,
+      shooterUsername,
+      closest.player,
+      LASER_DAMAGE,
+    )
+    return
+  }
+
+  const travelMs = (TORPEDO_RANGE / TORPEDO_SPEED) * 1000
+  const impactX = x + dirX * TORPEDO_RANGE
+  const impactY = y + dirY * TORPEDO_RANGE
+  await broadcast(postId, {
+    type: 'shot',
+    userId: shooterId,
+    x,
+    y,
+    rotation,
+    mode,
+    travelMs,
+  })
+  setTimeout(() => {
+    resolveTorpedoImpact(
+      postId,
+      subredditId,
+      shooterId,
+      shooterUsername,
+      impactX,
+      impactY,
+    ).catch(err =>
+      console.error(
+        `torpedo resolution failed; ${err instanceof Error ? err.stack : err}`,
+      ),
+    )
+  }, travelMs)
+}
+
+async function resolveTorpedoImpact(
+  postId: string,
+  subredditId: string,
+  shooterId: string,
+  shooterUsername: string,
+  impactX: number,
+  impactY: number,
+): Promise<void> {
+  const others = await listOtherPlayers(postId, shooterId)
   let closest: {player: PlayerState; distance: number} | undefined
   for (const p of others) {
-    const dx = p.x - x
-    const dy = p.y - y
-    const distance = Math.hypot(dx, dy)
-    if (distance === 0 || distance > WEAPON_RANGE) continue
-    const dot = (dx / distance) * dirX + (dy / distance) * dirY
-    const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
-    if (angle > WEAPON_HALF_ANGLE) continue
+    const distance = Math.hypot(p.x - impactX, p.y - impactY)
+    if (distance > TORPEDO_IMPACT_RADIUS) continue
     if (!closest || distance < closest.distance) closest = {player: p, distance}
   }
-  if (!closest) return
-  const target = closest.player
+  if (!closest) {
+    await broadcast(postId, {type: 'miss', x: impactX, y: impactY})
+    return
+  }
+  await applyDamage(
+    postId,
+    subredditId,
+    shooterId,
+    shooterUsername,
+    closest.player,
+    TORPEDO_DAMAGE,
+  )
+}
 
+async function applyDamage(
+  postId: string,
+  subredditId: string,
+  shooterId: string,
+  shooterUsername: string,
+  target: PlayerState,
+  damage: number,
+): Promise<void> {
   const hull = Math.max(
     0,
-    await redis.hIncrBy(hullKey(postId), target.userId, -HIT_DAMAGE),
+    await redis.hIncrBy(hullKey(postId), target.userId, -damage),
   )
   await broadcast(postId, {
     type: 'hit',

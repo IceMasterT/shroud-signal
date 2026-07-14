@@ -25,10 +25,17 @@ export const SHIP_LINES: readonly ShipLine[] = [
   'tender',
 ]
 
-/** Weapon range in world units — shared so the client's laser visual matches the server's hit-detection cone. */
-export const WEAPON_RANGE = 260
-/** Minimum time between shots, enforced authoritatively server-side (client also gates on this for feel). */
-export const FIRE_COOLDOWN_MS = 350
+/**
+ * Weapon tuning, shared so the client's visuals (beam length, torpedo travel
+ * time/speed) match the server's authoritative hit-detection exactly.
+ */
+export const LASER_RANGE = 420
+export const LASER_COOLDOWN_MS = 350
+export const TORPEDO_RANGE = 640
+export const TORPEDO_SPEED = 480 // world units/sec
+export const TORPEDO_COOLDOWN_MS = 1400
+
+export type WeaponMode = 'laser' | 'torpedo'
 
 /** A player's live state within one sector (post). */
 export type PlayerState = {
@@ -41,7 +48,8 @@ export type PlayerState = {
   rotation: number
   hull: number
   score: number
-  lastFiredAt: number
+  lastLaserAt: number
+  lastTorpedoAt: number
 }
 
 /** Sent once on load: your own state, plus everyone else currently present. */
@@ -59,9 +67,10 @@ export type MoveRsp = {ok: true}
 /**
  * Fire the ship's weapon. No client-supplied geometry — the server fires
  * from the shooter's own authoritative last-known position/facing so a
- * client can't claim to be somewhere it isn't to snipe out of range.
+ * client can't claim to be somewhere it isn't to snipe out of range. `mode`
+ * is not geometry, just which weapon, so it's safe to trust as-is.
  */
-export type FireReq = Record<string, never>
+export type FireReq = {mode: WeaponMode}
 export type FireRsp = {ok: true}
 
 /** Broadcast on the realtime channel to every connected client in the sector. */
@@ -71,8 +80,17 @@ export type RealtimeMsg =
   | {type: 'leave'; userId: string}
   | {type: 'score'; userId: string; score: number}
   | {type: 'pulse'; text: string}
-  | {type: 'shot'; userId: string; x: number; y: number; rotation: number}
+  | {
+      type: 'shot'
+      userId: string
+      x: number
+      y: number
+      rotation: number
+      mode: WeaponMode
+      travelMs: number
+    }
   | {type: 'hit'; targetUserId: string; shooterUserId: string; hull: number}
+  | {type: 'miss'; x: number; y: number}
   | {type: 'respawn'; player: PlayerState}
 
 /** Top pilots for the current subreddit, by score. */

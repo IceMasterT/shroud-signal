@@ -10,6 +10,7 @@ import {
   Endpoint,
   EndpointMethod,
   type ErrorRsp,
+  type FireReq,
   type FireRsp,
   type GetCounterRsp,
   type IncCounterReq,
@@ -93,7 +94,7 @@ async function route(
         rsp = await routeScore(reqMsg)
         break
       case Endpoint.Fire:
-        rsp = await routeFire()
+        rsp = await routeFire(reqMsg)
         break
       case Endpoint.Leaderboard:
         rsp = await routeLeaderboard()
@@ -197,14 +198,18 @@ async function routeScore(
   return {score}
 }
 
-async function routeFire(): Promise<FireRsp | ErrorRsp> {
+async function routeFire(reqMsg: IncomingMessage): Promise<FireRsp | ErrorRsp> {
   const postId = context.postId
   const userId = context.userId
   const subredditId = context.subredditId
   if (!postId) return {error: 'no postId', status: 400}
   if (!userId) return {error: 'must be logged in', status: 401}
+  const req = await readJson<FireReq>(reqMsg)
+  if (req.mode !== 'laser' && req.mode !== 'torpedo') {
+    return {error: 'invalid fire mode', status: 400}
+  }
   const username = context.username ?? 'anonymous'
-  await fireWeapon(postId, subredditId, userId, username)
+  await fireWeapon(postId, subredditId, userId, username, req.mode)
   return {ok: true}
 }
 

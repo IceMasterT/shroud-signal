@@ -1,7 +1,12 @@
 import {connectRealtime} from '@devvit/web/client'
 import * as Phaser from 'phaser'
 import type {PlayerState, RealtimeMsg} from '../shared/api.ts'
-import {FIRE_COOLDOWN_MS, WEAPON_RANGE} from '../shared/api.ts'
+import {
+  LASER_COOLDOWN_MS,
+  LASER_RANGE,
+  TORPEDO_COOLDOWN_MS,
+  TORPEDO_RANGE,
+} from '../shared/api.ts'
 import {
   fetchFire,
   fetchInit,
@@ -44,9 +49,11 @@ export class SectorScene extends Phaser.Scene {
     down: Phaser.Input.Keyboard.Key
     left: Phaser.Input.Keyboard.Key
     right: Phaser.Input.Keyboard.Key
-    fire: Phaser.Input.Keyboard.Key
+    laser: Phaser.Input.Keyboard.Key
+    torpedo: Phaser.Input.Keyboard.Key
   }
-  private lastFiredAt = 0
+  private lastLaserFiredAt = 0
+  private lastTorpedoFiredAt = 0
   private others = new Map<string, RemoteShip>()
   private hudName!: Phaser.GameObjects.Text
   private hudScore!: Phaser.GameObjects.Text
@@ -96,7 +103,8 @@ export class SectorScene extends Phaser.Scene {
       down: kb.addKey(Phaser.Input.Keyboard.KeyCodes.S),
       left: kb.addKey(Phaser.Input.Keyboard.KeyCodes.A),
       right: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
-      fire: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
+      laser: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
+      torpedo: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
     }
 
     this.hudName = this.add
@@ -136,11 +144,16 @@ export class SectorScene extends Phaser.Scene {
       .setDepth(50)
       .setAlpha(0)
     this.add
-      .text(W - 12, H - 12, '[SPACE] FIRE  ·  [L] LEADERBOARD', {
-        fontFamily: 'monospace',
-        fontSize: '10px',
-        color: '#446688',
-      })
+      .text(
+        W - 12,
+        H - 12,
+        '[SPACE] LASER  ·  [SHIFT] TORPEDO  ·  [L] LEADERBOARD',
+        {
+          fontFamily: 'monospace',
+          fontSize: '10px',
+          color: '#446688',
+        },
+      )
       .setOrigin(1, 1)
       .setScrollFactor(0)
       .setDepth(50)
@@ -257,10 +270,10 @@ export class SectorScene extends Phaser.Scene {
 
   private fireLaser(x: number, y: number, rotation: number): void {
     const dirAngle = rotation - Math.PI / 2
-    const midX = x + Math.cos(dirAngle) * (WEAPON_RANGE / 2)
-    const midY = y + Math.sin(dirAngle) * (WEAPON_RANGE / 2)
+    const midX = x + Math.cos(dirAngle) * (LASER_RANGE / 2)
+    const midY = y + Math.sin(dirAngle) * (LASER_RANGE / 2)
     const beam = this.add
-      .rectangle(midX, midY, WEAPON_RANGE, 3, 0xff5566, 0.9)
+      .rectangle(midX, midY, LASER_RANGE, 3, 0xff5566, 0.9)
       .setRotation(dirAngle)
       .setDepth(18)
     this.tweens.add({
@@ -268,6 +281,43 @@ export class SectorScene extends Phaser.Scene {
       alpha: 0,
       duration: 180,
       onComplete: () => beam.destroy(),
+    })
+  }
+
+  private fireTorpedo(
+    x: number,
+    y: number,
+    rotation: number,
+    travelMs: number,
+  ): void {
+    const dirAngle = rotation - Math.PI / 2
+    const endX = x + Math.cos(dirAngle) * TORPEDO_RANGE
+    const endY = y + Math.sin(dirAngle) * TORPEDO_RANGE
+    const bolt = this.add
+      .circle(x, y, 6, 0xff9500, 1)
+      .setStrokeStyle(2, 0xffe0b0, 0.8)
+      .setDepth(18)
+    this.tweens.add({
+      targets: bolt,
+      x: endX,
+      y: endY,
+      duration: travelMs,
+      ease: 'Linear',
+      onComplete: () => bolt.destroy(),
+    })
+  }
+
+  private fizzleMiss(x: number, y: number): void {
+    const ring = this.add
+      .circle(x, y, 8, 0x000000, 0)
+      .setStrokeStyle(2, 0xff9500, 0.8)
+      .setDepth(18)
+    this.tweens.add({
+      targets: ring,
+      radius: 34,
+      alpha: 0,
+      duration: 320,
+      onComplete: () => ring.destroy(),
     })
   }
 
@@ -339,8 +389,14 @@ export class SectorScene extends Phaser.Scene {
     } else if (msg.type === 'pulse') {
       this.showPulse(msg.text)
     } else if (msg.type === 'shot') {
-      if (msg.userId !== this.player?.userId)
-        this.fireLaser(msg.x, msg.y, msg.rotation)
+      if (msg.mode === 'laser') {
+        if (msg.userId !== this.player?.userId)
+          this.fireLaser(msg.x, msg.y, msg.rotation)
+      } else {
+        this.fireTorpedo(msg.x, msg.y, msg.rotation, msg.travelMs)
+      }
+    } else if (msg.type === 'miss') {
+      this.fizzleMiss(msg.x, msg.y)
     } else if (msg.type === 'hit') {
       if (msg.targetUserId === this.player?.userId) {
         if (this.player) {
@@ -380,12 +436,18 @@ export class SectorScene extends Phaser.Scene {
         Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * 0.5 * dt
     }
 
-    if (this.keys.fire.isDown) {
-      const now = performance.now()
-      if (now - this.lastFiredAt > FIRE_COOLDOWN_MS) {
-        this.lastFiredAt = now
+    const nowMs = performance.now()
+    if (this.keys.laser.isDown) {
+      if (nowMs - this.lastLaserFiredAt > LASER_COOLDOWN_MS) {
+        this.lastLaserFiredAt = nowMs
         this.fireLaser(this.ship.x, this.ship.y, this.ship.rotation)
-        void fetchFire()
+        void fetchFire({mode: 'laser'})
+      }
+    }
+    if (this.keys.torpedo.isDown) {
+      if (nowMs - this.lastTorpedoFiredAt > TORPEDO_COOLDOWN_MS) {
+        this.lastTorpedoFiredAt = nowMs
+        void fetchFire({mode: 'torpedo'})
       }
     }
 
