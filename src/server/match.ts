@@ -14,11 +14,11 @@ import {
   matchChannel,
   ROUND_MAX_MS,
   ROUND_RESULT_DISPLAY_MS,
-  SHIP_LINES,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
   TORPEDO_SPEED,
 } from '../shared/api.ts'
+import {canJoinLine, maxHullFor} from './abilities.ts'
 
 const START_HULL = 100
 const LASER_HALF_ANGLE = 0.3
@@ -44,13 +44,6 @@ function matchKillsKey(matchId: string): string {
 
 function randomId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-}
-
-function lineForUser(userId: string): ShipLine {
-  let hash = 0
-  for (let i = 0; i < userId.length; i++)
-    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
-  return SHIP_LINES[hash % SHIP_LINES.length] ?? 'fighter'
 }
 
 /** Seeds each team on opposite sides of the arena so a round opens as two fleets closing in. */
@@ -147,6 +140,7 @@ export async function joinMatch(
   userId: string,
   username: string,
   snoovatar: string | undefined,
+  line: ShipLine,
 ): Promise<PlayerState> {
   const match = await getMatch(matchId)
   if (!match) throw new Error('match not found')
@@ -157,19 +151,22 @@ export async function joinMatch(
   if (existing) return JSON.parse(existing) as PlayerState
 
   const players = await getMatchPlayers(matchId)
-  const teamCount = players.filter(p => p.team === side).length
-  if (teamCount >= match.playerCap) throw new Error('team is full')
+  const teammates = players.filter(p => p.team === side)
+  if (teammates.length >= match.playerCap) throw new Error('team is full')
+  if (!canJoinLine(teammates, line))
+    throw new Error(`${line} is full for this team (max 2)`)
 
   const spawn = randSpawn(side)
+  const maxHull = maxHullFor(line)
   const player: PlayerState = {
     userId,
     username,
     snoovatar: snoovatar ?? null,
-    line: lineForUser(userId),
+    line,
     x: spawn.x,
     y: spawn.y,
     rotation: 0,
-    hull: START_HULL,
+    hull: maxHull,
     score: 0,
     kills: 0,
     lastLaserAt: 0,
@@ -179,7 +176,7 @@ export async function joinMatch(
     team: side,
   }
   await redis.hSet(matchPlayersKey(matchId), {[userId]: JSON.stringify(player)})
-  await redis.hSet(matchHullKey(matchId), {[userId]: String(START_HULL)})
+  await redis.hSet(matchHullKey(matchId), {[userId]: String(maxHull)})
   await broadcastMatch(matchId, {type: 'roster', player})
   return player
 }
@@ -371,15 +368,16 @@ async function startRound(match: Match): Promise<Match> {
   for (const p of players) {
     if (!p.team) continue
     const spawn = randSpawn(p.team)
+    const maxHull = maxHullFor(p.line)
     p.x = spawn.x
     p.y = spawn.y
     p.rotation = 0
-    p.hull = START_HULL
+    p.hull = maxHull
     await redis.hSet(matchPlayersKey(match.matchId), {
       [p.userId]: JSON.stringify(p),
     })
     await redis.hSet(matchHullKey(match.matchId), {
-      [p.userId]: String(START_HULL),
+      [p.userId]: String(maxHull),
     })
   }
   match.status = 'round_active'
