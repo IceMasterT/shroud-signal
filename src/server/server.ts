@@ -33,6 +33,7 @@ import {
   type ScoreReq,
   type ScoreRsp,
   SHIP_LINES,
+  SQUAD_PRESETS,
   SQUAD_RULES,
 } from '../shared/api.ts'
 import {
@@ -396,6 +397,15 @@ async function routeMatchJoin(
   if (!SHIP_LINES.includes(req.line)) {
     return {error: 'invalid ship line', status: 400}
   }
+  if (req.mode !== 'individual' && req.mode !== 'preset') {
+    return {error: 'invalid join mode', status: 400}
+  }
+  if (
+    req.mode === 'preset' &&
+    (!req.presetId || !(req.presetId in SQUAD_PRESETS))
+  ) {
+    return {error: 'invalid preset', status: 400}
+  }
   try {
     await joinMatch(
       kind.matchId,
@@ -404,6 +414,8 @@ async function routeMatchJoin(
       username,
       context.snoovatar,
       req.line,
+      req.mode,
+      req.presetId,
     )
     return {ok: true}
   } catch (err) {
