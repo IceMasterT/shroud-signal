@@ -8,17 +8,24 @@ import type {
   Team,
 } from '../shared/api.ts'
 import {
+  BULWARK_DURATION_MS,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   MATCH_ROUNDS_TO_WIN,
   matchChannel,
+  OVERCHARGE_DURATION_MS,
   ROUND_MAX_MS,
   ROUND_RESULT_DISPLAY_MS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
   TORPEDO_SPEED,
 } from '../shared/api.ts'
-import {canJoinLine, maxHullFor} from './abilities.ts'
+import {
+  abilityReady,
+  canJoinLine,
+  computeDamage,
+  maxHullFor,
+} from './abilities.ts'
 
 const LASER_HALF_ANGLE = 0.3
 const LASER_DAMAGE = 20
@@ -251,7 +258,7 @@ export async function fireWeaponInMatch(
         closest = {player: p, distance}
     }
     if (!closest) return
-    await applyDamageInMatch(matchId, shooterId, closest.player, LASER_DAMAGE)
+    await applyDamageInMatch(matchId, shooter, closest.player, LASER_DAMAGE)
     return
   }
 
@@ -289,6 +296,9 @@ async function resolveTorpedoImpactInMatch(
   impactX: number,
   impactY: number,
 ): Promise<void> {
+  const shooterJson = await redis.hGet(matchPlayersKey(matchId), shooterId)
+  if (!shooterJson) return
+  const shooter = JSON.parse(shooterJson) as PlayerState
   const enemies = await enemyRoster(matchId, shooterTeam)
   let closest: {player: PlayerState; distance: number} | undefined
   for (const p of enemies) {
@@ -300,7 +310,7 @@ async function resolveTorpedoImpactInMatch(
     await broadcastMatch(matchId, {type: 'miss', x: impactX, y: impactY})
     return
   }
-  await applyDamageInMatch(matchId, shooterId, closest.player, TORPEDO_DAMAGE)
+  await applyDamageInMatch(matchId, shooter, closest.player, TORPEDO_DAMAGE)
 }
 
 async function enemyRoster(
@@ -321,12 +331,43 @@ async function isEliminated(matchId: string, userId: string): Promise<boolean> {
   return (await redis.zScore(matchEliminatedKey(matchId), userId)) !== undefined
 }
 
+export async function activateAbility(
+  matchId: string,
+  userId: string,
+): Promise<void> {
+  const match = await getMatch(matchId)
+  if (match?.status !== 'round_active') throw new Error('no active round')
+
+  const existing = await redis.hGet(matchPlayersKey(matchId), userId)
+  if (!existing) throw new Error('not in this match')
+  const shooter = JSON.parse(existing) as PlayerState
+  if (await isEliminated(matchId, userId)) throw new Error('you are eliminated')
+
+  const now = Date.now()
+  if (!abilityReady(shooter.lastAbilityAt, shooter.line, now)) {
+    throw new Error('ability is on cooldown')
+  }
+  shooter.lastAbilityAt = now
+
+  if (shooter.line === 'fighter' || shooter.line === 'transport') {
+    const duration =
+      shooter.line === 'fighter' ? OVERCHARGE_DURATION_MS : BULWARK_DURATION_MS
+    shooter.abilityActiveUntil = now + duration
+  }
+
+  await redis.hSet(matchPlayersKey(matchId), {
+    [userId]: JSON.stringify(shooter),
+  })
+  await broadcastMatch(matchId, {type: 'ability', userId, line: shooter.line})
+}
+
 async function applyDamageInMatch(
   matchId: string,
-  shooterId: string,
+  shooter: PlayerState,
   target: PlayerState,
-  damage: number,
+  baseDamage: number,
 ): Promise<void> {
+  const damage = computeDamage(baseDamage, Date.now(), shooter, target)
   const hull = Math.max(
     0,
     await redis.hIncrBy(matchHullKey(matchId), target.userId, -damage),
@@ -334,7 +375,7 @@ async function applyDamageInMatch(
   await broadcastMatch(matchId, {
     type: 'hit',
     targetUserId: target.userId,
-    shooterUserId: shooterId,
+    shooterUserId: shooter.userId,
     hull,
   })
   if (hull > 0) return
@@ -343,8 +384,8 @@ async function applyDamageInMatch(
     member: target.userId,
     score: Date.now(),
   })
-  const kills = await redis.hIncrBy(matchKillsKey(matchId), shooterId, 1)
-  await broadcastMatch(matchId, {type: 'kills', userId: shooterId, kills})
+  const kills = await redis.hIncrBy(matchKillsKey(matchId), shooter.userId, 1)
+  await broadcastMatch(matchId, {type: 'kills', userId: shooter.userId, kills})
   if (!target.team) return
   await broadcastMatch(matchId, {
     type: 'eliminated',
