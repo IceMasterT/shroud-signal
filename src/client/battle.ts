@@ -287,7 +287,7 @@ class BattleScene extends Phaser.Scene {
       `TEAM ${this.self.team}  ·  A ${aliveA} vs B ${aliveB} remaining`,
     )
     this.hudBottom.setText(
-      `${this.self.username}  ·  ${SHIP_LABEL[this.self.line]}  ·  HULL ${this.self.hull}${this.selfEliminated ? '  ·  ELIMINATED (spectating)' : ''}`,
+      `${this.self.username}  ·  ${SHIP_LABEL[this.self.line]}  ·  HULL ${this.self.hull}  ·  KILLS ${this.self.kills}${this.selfEliminated ? '  ·  ELIMINATED (spectating)' : ''}`,
     )
   }
 
@@ -328,6 +328,11 @@ class BattleScene extends Phaser.Scene {
         this.updateHud()
       } else {
         this.eliminateRemote(msg.userId)
+      }
+    } else if (msg.type === 'kills' && msg.userId === this.self?.userId) {
+      if (this.self) {
+        this.self.kills = msg.kills
+        this.updateHud()
       }
     }
   }
@@ -442,6 +447,24 @@ function rosterList(players: PlayerState[], cap: number): string {
   return `<b>${players.length}/${cap}</b> ${names}`
 }
 
+function killsScoreboard(
+  rosterA: PlayerState[],
+  rosterB: PlayerState[],
+): string {
+  const ranked = [...rosterA, ...rosterB]
+    .filter(p => p.kills > 0)
+    .sort((a, b) => b.kills - a.kills)
+    .slice(0, 5)
+  if (ranked.length === 0) return ''
+  const rows = ranked
+    .map(
+      (p, i) =>
+        `${i + 1}. ${escapeHtml(p.username)} (${p.team}) — ${p.kills} kill${p.kills === 1 ? '' : 's'}`,
+    )
+    .join('<br>')
+  return `<p><b>TOP KILLS</b><br>${rows}</p>`
+}
+
 async function joinBattle(): Promise<void> {
   const rsp = await fetchMatchJoin()
   if (isErrorRsp(rsp)) {
@@ -521,6 +544,7 @@ function renderMatch(
       <div class="panel">
         <h1>${winnerText}</h1>
         <p>Final: <span class="stat">A ${match.roundWinsA}</span> — <span class="stat">B ${match.roundWinsB}</span></p>
+        ${killsScoreboard(rosterA, rosterB)}
       </div>
     `)
   }

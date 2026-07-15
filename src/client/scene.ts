@@ -241,7 +241,7 @@ export class SectorScene extends Phaser.Scene {
     const lines = rsp.entries
       .map(
         (e, i) =>
-          `${String(i + 1).padStart(2, ' ')}.  ${e.username}  —  ${e.score}`,
+          `${String(i + 1).padStart(2, ' ')}.  ${e.username}  —  ${e.score}  (${e.kills} kills)`,
       )
       .join('\n')
     this.leaderboardPanel.setText(`TOP PILOTS\n\n${lines}`)
@@ -264,7 +264,7 @@ export class SectorScene extends Phaser.Scene {
   private updateScoreHud(): void {
     if (this.player)
       this.hudScore.setText(
-        `SCORE  ${this.player.score}   HULL  ${this.player.hull}`,
+        `SCORE  ${this.player.score}   KILLS  ${this.player.kills}   HULL  ${this.player.hull}`,
       )
   }
 
@@ -384,6 +384,11 @@ export class SectorScene extends Phaser.Scene {
     } else if (msg.type === 'score' && msg.userId === this.player?.userId) {
       if (this.player) {
         this.player.score = msg.score
+        this.updateScoreHud()
+      }
+    } else if (msg.type === 'kills' && msg.userId === this.player?.userId) {
+      if (this.player) {
+        this.player.kills = msg.kills
         this.updateScoreHud()
       }
     } else if (msg.type === 'pulse') {

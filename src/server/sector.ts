@@ -44,8 +44,16 @@ function scoreKey(postId: string): string {
   return `sector:${postId}:score`
 }
 
+function killsKey(postId: string): string {
+  return `sector:${postId}:kills`
+}
+
 function leaderboardKey(subredditId: string): string {
   return `leaderboard:${subredditId}`
+}
+
+function killsLeaderboardKey(subredditId: string): string {
+  return `leaderboard-kills:${subredditId}`
 }
 
 /** Sorted set of postIds, scored by last-active timestamp — drives the pulse tick. */
@@ -82,12 +90,14 @@ export async function getOrCreatePlayer(
     p.lastLaserAt = p.lastLaserAt ?? 0
     p.lastTorpedoAt = p.lastTorpedoAt ?? 0
     p.team = p.team ?? null
+    p.kills = p.kills ?? 0
     await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(p)})
-    const [hull, score] = await Promise.all([
+    const [hull, score, kills] = await Promise.all([
       readHull(postId, userId),
       readScore(postId, userId),
+      readKills(postId, userId),
     ])
-    return {...p, hull, score}
+    return {...p, hull, score, kills}
   }
   const spawn = randSpawn()
   const player: PlayerState = {
@@ -100,6 +110,7 @@ export async function getOrCreatePlayer(
     rotation: 0,
     hull: START_HULL,
     score: 0,
+    kills: 0,
     lastLaserAt: 0,
     lastTorpedoAt: 0,
     team: null,
@@ -119,6 +130,11 @@ async function readHull(postId: string, userId: string): Promise<number> {
 
 async function readScore(postId: string, userId: string): Promise<number> {
   const v = await redis.hGet(scoreKey(postId), userId)
+  return v === undefined ? 0 : Number(v)
+}
+
+async function readKills(postId: string, userId: string): Promise<number> {
+  const v = await redis.hGet(killsKey(postId), userId)
   return v === undefined ? 0 : Number(v)
 }
 
@@ -190,15 +206,36 @@ export async function addScore(
   return score
 }
 
+/** Adds to a player's kill count, both in their sector record and the subreddit kill leaderboard. */
+export async function addKill(
+  postId: string,
+  subredditId: string,
+  userId: string,
+  username: string,
+): Promise<number> {
+  const isActive = await redis.hGet(playersKey(postId), userId)
+  const kills = await redis.hIncrBy(killsKey(postId), userId, 1)
+  if (isActive) await broadcast(postId, {type: 'kills', userId, kills})
+  await redis.zIncrBy(killsLeaderboardKey(subredditId), username, 1)
+  return kills
+}
+
 export async function topPilots(
   subredditId: string,
   count: number,
-): Promise<{username: string; score: number}[]> {
+): Promise<{username: string; score: number; kills: number}[]> {
   const rows = await redis.zRange(leaderboardKey(subredditId), 0, count - 1, {
     reverse: true,
     by: 'rank',
   })
-  return rows.map(r => ({username: r.member, score: r.score}))
+  const kills = await Promise.all(
+    rows.map(r => redis.zScore(killsLeaderboardKey(subredditId), r.member)),
+  )
+  return rows.map((r, i) => ({
+    username: r.member,
+    score: r.score,
+    kills: kills[i] ?? 0,
+  }))
 }
 
 /**
@@ -361,10 +398,17 @@ async function applyDamage(
   }
 
   await addScore(postId, subredditId, shooterId, shooterUsername, KILL_SCORE)
+  await addKill(postId, subredditId, shooterId, shooterUsername)
   const spawn = randSpawn()
   await redis.hSet(hullKey(postId), {[target.userId]: String(START_HULL)})
+  // `target` came from listOtherPlayers, which returns the raw players-hash
+  // blob without merging the authoritative kills counter — re-read it so a
+  // player who has kills doesn't have that count clobbered back to stale on
+  // their own respawn broadcast.
+  const targetKills = await readKills(postId, target.userId)
   const respawned: PlayerState = {
     ...target,
+    kills: targetKills,
     hull: START_HULL,
     x: spawn.x,
     y: spawn.y,

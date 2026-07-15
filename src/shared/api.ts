@@ -48,6 +48,7 @@ export type PlayerState = {
   rotation: number
   hull: number
   score: number
+  kills: number
   lastLaserAt: number
   lastTorpedoAt: number
   team: Team | null
@@ -80,6 +81,7 @@ export type RealtimeMsg =
   | {type: 'move'; player: PlayerState}
   | {type: 'leave'; userId: string}
   | {type: 'score'; userId: string; score: number}
+  | {type: 'kills'; userId: string; kills: number}
   | {type: 'pulse'; text: string}
   | {
       type: 'shot'
@@ -95,7 +97,7 @@ export type RealtimeMsg =
   | {type: 'respawn'; player: PlayerState}
 
 /** Top pilots for the current subreddit, by score. */
-export type LeaderboardEntry = {username: string; score: number}
+export type LeaderboardEntry = {username: string; score: number; kills: number}
 export type LeaderboardRsp = {entries: LeaderboardEntry[]}
 
 /** Increment the caller's score (e.g. after a scripted action) by a signed amount. */
@@ -225,6 +227,7 @@ export type MatchMsg =
   | {type: 'hit'; targetUserId: string; shooterUserId: string; hull: number}
   | {type: 'miss'; x: number; y: number}
   | {type: 'eliminated'; userId: string; team: Team}
+  | {type: 'kills'; userId: string; kills: number}
   | {
       type: 'round_end'
       winner: Team | 'tie'

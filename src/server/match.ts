@@ -38,6 +38,9 @@ function matchHullKey(matchId: string): string {
 function matchEliminatedKey(matchId: string): string {
   return `match:${matchId}:eliminated`
 }
+function matchKillsKey(matchId: string): string {
+  return `match:${matchId}:kills`
+}
 
 function randomId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
@@ -71,11 +74,16 @@ async function saveMatch(match: Match): Promise<void> {
 }
 
 export async function getMatchPlayers(matchId: string): Promise<PlayerState[]> {
-  const all = await redis.hGetAll(matchPlayersKey(matchId))
+  const [all, kills] = await Promise.all([
+    redis.hGetAll(matchPlayersKey(matchId)),
+    redis.hGetAll(matchKillsKey(matchId)),
+  ])
   const out: PlayerState[] = []
-  for (const json of Object.values(all ?? {})) {
+  for (const [userId, json] of Object.entries(all ?? {})) {
     try {
-      out.push(JSON.parse(json) as PlayerState)
+      const p = JSON.parse(json) as PlayerState
+      p.kills = Number(kills?.[userId] ?? 0)
+      out.push(p)
     } catch {
       // skip malformed entries
     }
@@ -163,6 +171,7 @@ export async function joinMatch(
     rotation: 0,
     hull: START_HULL,
     score: 0,
+    kills: 0,
     lastLaserAt: 0,
     lastTorpedoAt: 0,
     team: side,
@@ -336,6 +345,8 @@ async function applyDamageInMatch(
     member: target.userId,
     score: Date.now(),
   })
+  const kills = await redis.hIncrBy(matchKillsKey(matchId), shooterId, 1)
+  await broadcastMatch(matchId, {type: 'kills', userId: shooterId, kills})
   if (!target.team) return
   await broadcastMatch(matchId, {
     type: 'eliminated',
