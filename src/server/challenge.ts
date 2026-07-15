@@ -3,6 +3,7 @@ import type {
   Challenge,
   ChallengeAction,
   ChallengeStatus,
+  SquadRule,
 } from '../shared/api.ts'
 import {createMatch} from './match.ts'
 
@@ -54,6 +55,7 @@ export async function createChallenge(
   targetSubredditName: string,
   playerCap: number,
   warmupMinutes: number,
+  squadRule: SquadRule,
 ): Promise<Challenge> {
   const challengeId = randomId()
   const cap = clampPlayerCap(playerCap)
@@ -75,8 +77,10 @@ export async function createChallenge(
     targetSubredditName,
     playerCap: cap,
     warmupMinutes: warmup,
+    squadRule,
     counterPlayerCap: null,
     counterWarmupMinutes: null,
+    counterSquadRule: null,
     status: 'pending',
     createdAt: Date.now(),
     matchId: null,
@@ -103,6 +107,7 @@ export async function respondChallenge(
   action: ChallengeAction,
   playerCap: number | undefined,
   warmupMinutes: number | undefined,
+  squadRule: SquadRule | undefined,
 ): Promise<{challengeStatus: ChallengeStatus; matchId: string | null}> {
   const challenge = await getChallenge(challengeId)
   if (!challenge) throw new Error('challenge not found')
@@ -128,6 +133,7 @@ export async function respondChallenge(
       challenge.counterWarmupMinutes = clampWarmupMinutes(
         warmupMinutes ?? challenge.warmupMinutes,
       )
+      challenge.counterSquadRule = squadRule ?? challenge.squadRule
       challenge.status = 'countered'
       await saveChallenge(challenge)
       return {challengeStatus: challenge.status, matchId: null}
@@ -141,6 +147,7 @@ export async function respondChallenge(
     challenge.playerCap = challenge.counterPlayerCap ?? challenge.playerCap
     challenge.warmupMinutes =
       challenge.counterWarmupMinutes ?? challenge.warmupMinutes
+    challenge.squadRule = challenge.counterSquadRule ?? challenge.squadRule
   }
 
   const match = await createMatch(challenge)
