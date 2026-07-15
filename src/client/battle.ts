@@ -123,7 +123,7 @@ class BattleScene extends Phaser.Scene {
       left: kb.addKey(Phaser.Input.Keyboard.KeyCodes.A),
       right: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       laser: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
-      torpedo: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+      torpedo: kb.addKey(Phaser.Input.Keyboard.KeyCodes.E),
     }
 
     this.hudTop = this.add

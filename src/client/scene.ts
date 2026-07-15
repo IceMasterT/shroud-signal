@@ -104,7 +104,7 @@ export class SectorScene extends Phaser.Scene {
       left: kb.addKey(Phaser.Input.Keyboard.KeyCodes.A),
       right: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       laser: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
-      torpedo: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+      torpedo: kb.addKey(Phaser.Input.Keyboard.KeyCodes.E),
     }
 
     this.hudName = this.add
@@ -147,7 +147,7 @@ export class SectorScene extends Phaser.Scene {
       .text(
         W - 12,
         H - 12,
-        '[SPACE] LASER  ·  [SHIFT] TORPEDO  ·  [L] LEADERBOARD',
+        '[SPACE] LASER  ·  [E] MISSILE  ·  [L] LEADERBOARD',
         {
           fontFamily: 'monospace',
           fontSize: '10px',

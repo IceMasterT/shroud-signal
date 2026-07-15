@@ -2,7 +2,7 @@
 
 A shared sector of space, live inside your subreddit. Built for the [Phaser × Reddit hackathon](https://phaser.io/news/2026/06/reddit-and-phaser-launch-a-40-000-game-dev-hackathon) on [Devvit](https://developers.reddit.com/). A spin-off of [Mentaverse](https://mentagame.com), another game I've been developing, reusing its ship art and lore.
 
-Post **"Chart a New Sector"** from a subreddit's menu and anyone who opens it spawns a ship, one of five lines pulled from Mentaverse's starter fleet, flying in real time alongside everyone else currently in that post. Fire on other pilots (`Space` for lasers, `Shift` for torpedoes), climb the subreddit-wide leaderboard, and listen for the ambient "galaxy pulse," a scheduled rumor about the Shroud broadcast to every active sector every five minutes.
+Post **"Chart a New Sector"** from a subreddit's menu and anyone who opens it spawns a ship, one of five lines pulled from Mentaverse's starter fleet, flying in real time alongside everyone else currently in that post. Fire on other pilots (`Space` for lasers, `E` for missiles), climb the subreddit-wide leaderboard, and listen for the ambient "galaxy pulse," a scheduled rumor about the Shroud broadcast to every active sector every five minutes.
 
 No login flow, no accounts, no external database: player identity, position, combat, and scoring all live on Devvit's own Redis, realtime pub/sub, and scheduler primitives, inside the Reddit post that spawned them.
 
@@ -24,7 +24,7 @@ I'm IceMasterT ([GitHub](https://github.com/icemastert), u/Capital_Vegetable_80)
 - **`@devvit/redis`**: per-sector player state (position, rotation, hull, score) as a Redis hash keyed by sector, plus a subreddit-wide leaderboard sorted set. Hull and score use atomic `hIncrBy` counters to stay correct under concurrent hits/scoring.
 - **`@devvit/realtime`**: server-to-client pub/sub broadcasting join/move/leave/score/shot/hit/respawn/pulse events to every pilot in a sector.
 - **`@devvit/scheduler`**: a cron task that pulses ambient flavor text to every sector active in the last 24 hours.
-- **Phaser 4**: flight physics, a starfield, live remote-ship interpolation, a HUD, a leaderboard overlay, and laser/torpedo combat, rendered client-side.
+- **Phaser 4**: flight physics, a starfield, live remote-ship interpolation, a HUD, a leaderboard overlay, and laser/missile combat, rendered client-side.
 
 Combat and movement are server-authoritative: the server fires from a shooter's own last-known tracked position rather than trusting client-supplied coordinates, and enforces the fire cooldown itself rather than relying on the client.
 
