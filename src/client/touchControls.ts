@@ -1,4 +1,4 @@
-import * as Phaser from 'phaser'
+import type * as Phaser from 'phaser'
 
 /**
  * A screen-fixed drag joystick. While a pointer is held inside its base

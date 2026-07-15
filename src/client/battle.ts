@@ -28,6 +28,7 @@ import {
   fetchMove,
   isErrorRsp,
 } from './fetch.ts'
+import {TouchButton, VirtualJoystick} from './touchControls.ts'
 
 const WORLD_HALF = 900
 const THRUST = 340
@@ -142,6 +143,10 @@ class BattleScene extends Phaser.Scene {
   lastLaserFiredAt = 0
   lastTorpedoFiredAt = 0
   lastAbilityFiredAt = 0
+  joystick: VirtualJoystick | null = null
+  touchLaser: TouchButton | null = null
+  touchMissile: TouchButton | null = null
+  touchAbility: TouchButton | null = null
   others = new Map<string, RemoteShip>()
   mines = new Map<string, Phaser.GameObjects.Arc>()
   hudTop!: Phaser.GameObjects.Text
@@ -219,6 +224,11 @@ class BattleScene extends Phaser.Scene {
       .setOrigin(1, 1)
       .setScrollFactor(0)
       .setDepth(50)
+
+    this.joystick = new VirtualJoystick(this, 110, H - 110, 70)
+    this.touchMissile = new TouchButton(this, W - 70, H - 70, 34, 'MSL')
+    this.touchLaser = new TouchButton(this, W - 160, H - 70, 34, 'LSR')
+    this.touchAbility = new TouchButton(this, W - 115, H - 160, 34, 'ABL')
   }
 
   spawnSelf(player: PlayerState): void {
@@ -505,24 +515,31 @@ class BattleScene extends Phaser.Scene {
     const dt = Math.min(deltaMs / 1000, 0.05)
     const spd = this.self.line ? SHIP_STATS[this.self.line].speedMul : 1
 
-    if (this.keys.left.isDown) this.ship.rotation -= TURN_SPEED * spd * dt
-    if (this.keys.right.isDown) this.ship.rotation += TURN_SPEED * spd * dt
-    if (this.keys.up.isDown) {
-      this.velX +=
-        Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * spd * dt
-      this.velY +=
-        Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * spd * dt
-    }
-    if (this.keys.down.isDown) {
-      this.velX -=
-        Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * spd * 0.5 * dt
-      this.velY -=
-        Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * spd * 0.5 * dt
+    if (this.joystick?.active) {
+      this.ship.rotation = this.joystick.angle
+      const thrust = THRUST * spd * this.joystick.magnitude
+      this.velX += Math.cos(this.ship.rotation - Math.PI / 2) * thrust * dt
+      this.velY += Math.sin(this.ship.rotation - Math.PI / 2) * thrust * dt
+    } else {
+      if (this.keys.left.isDown) this.ship.rotation -= TURN_SPEED * spd * dt
+      if (this.keys.right.isDown) this.ship.rotation += TURN_SPEED * spd * dt
+      if (this.keys.up.isDown) {
+        this.velX +=
+          Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * spd * dt
+        this.velY +=
+          Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * spd * dt
+      }
+      if (this.keys.down.isDown) {
+        this.velX -=
+          Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * spd * 0.5 * dt
+        this.velY -=
+          Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * spd * 0.5 * dt
+      }
     }
 
     const nowMs = performance.now()
     if (
-      this.keys.laser.isDown &&
+      (this.keys.laser.isDown || this.touchLaser?.isDown) &&
       nowMs - this.lastLaserFiredAt > LASER_COOLDOWN_MS
     ) {
       this.lastLaserFiredAt = nowMs
@@ -530,14 +547,14 @@ class BattleScene extends Phaser.Scene {
       void fetchFire({mode: 'laser'})
     }
     if (
-      this.keys.torpedo.isDown &&
+      (this.keys.torpedo.isDown || this.touchMissile?.isDown) &&
       nowMs - this.lastTorpedoFiredAt > TORPEDO_COOLDOWN_MS
     ) {
       this.lastTorpedoFiredAt = nowMs
       void fetchFire({mode: 'torpedo'})
     }
     if (
-      this.keys.ability.isDown &&
+      (this.keys.ability.isDown || this.touchAbility?.isDown) &&
       nowMs - this.lastAbilityFiredAt > ABILITY_COOLDOWN_MS[this.self.line]
     ) {
       this.lastAbilityFiredAt = nowMs
@@ -800,6 +817,7 @@ async function boot(): Promise<void> {
       width: window.innerWidth,
       height: window.innerHeight,
     },
+    input: {activePointers: 2},
     scene: [BattleScene],
   })
   game.events.once('ready', () => {
