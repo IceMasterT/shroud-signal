@@ -496,6 +496,8 @@ async function startRound(match: Match): Promise<Match> {
     p.y = spawn.y
     p.rotation = 0
     p.hull = maxHull
+    p.lastAbilityAt = 0
+    p.abilityActiveUntil = 0
     await redis.hSet(matchPlayersKey(match.matchId), {
       [p.userId]: JSON.stringify(p),
     })
