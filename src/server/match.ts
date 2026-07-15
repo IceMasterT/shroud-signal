@@ -16,6 +16,8 @@ import {
   OVERCHARGE_DURATION_MS,
   ROUND_MAX_MS,
   ROUND_RESULT_DISPLAY_MS,
+  TENDER_HEAL_AMOUNT,
+  TENDER_HEAL_RANGE,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
   TORPEDO_SPEED,
@@ -25,6 +27,7 @@ import {
   canJoinLine,
   computeDamage,
   maxHullFor,
+  nearestAlly,
 } from './abilities.ts'
 
 const LASER_HALF_ANGLE = 0.3
@@ -358,6 +361,35 @@ export async function activateAbility(
   await redis.hSet(matchPlayersKey(matchId), {
     [userId]: JSON.stringify(shooter),
   })
+
+  if (shooter.line === 'tender') {
+    const players = await getMatchPlayers(matchId)
+    const allies: PlayerState[] = []
+    for (const p of players) {
+      if (p.team !== shooter.team) continue
+      if (await isEliminated(matchId, p.userId)) continue
+      allies.push(p)
+    }
+    const target = nearestAlly(allies, shooter, TENDER_HEAL_RANGE)
+    if (target) {
+      const maxHull = maxHullFor(target.line)
+      const current = await redis.hGet(matchHullKey(matchId), target.userId)
+      const healed = Math.min(
+        maxHull,
+        Number(current ?? maxHull) + TENDER_HEAL_AMOUNT,
+      )
+      await redis.hSet(matchHullKey(matchId), {
+        [target.userId]: String(healed),
+      })
+      await broadcastMatch(matchId, {
+        type: 'heal',
+        targetUserId: target.userId,
+        healerUserId: userId,
+        hull: healed,
+      })
+    }
+  }
+
   await broadcastMatch(matchId, {type: 'ability', userId, line: shooter.line})
 }
 
