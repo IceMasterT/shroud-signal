@@ -5,6 +5,7 @@ import type {
   MatchMsg,
   PlayerState,
   PostKind,
+  PresetId,
   Team,
 } from '../shared/api.ts'
 import {
@@ -15,6 +16,7 @@ import {
   RADAR_PING_DURATION_MS,
   SHIP_LINES,
   SHIP_STATS,
+  SQUAD_PRESETS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
 } from '../shared/api.ts'
@@ -49,6 +51,37 @@ const ABILITY_BLURB: Record<PlayerState['line'], string> = {
   transport: 'Bulwark: -50% damage taken for 4s',
   pathfinder: 'Radar Ping: reveals enemy hull for 6s',
   tender: 'Repair Beam: heals your nearest ally',
+}
+
+const PRESET_LABEL: Record<PresetId, string> = {
+  balanced: 'Balanced Wing — one of each role, twice over',
+  aggro: 'Aggro Rush — fighters and pathfinders, hit fast',
+  turtle: 'Turtle Wall — transports and tenders, outlast them',
+  recon: 'Recon Strike — pathfinders and miners, control the field',
+}
+
+function presetSlotSummary(presetId: PresetId, playerCap: number): string {
+  const slots = SQUAD_PRESETS[presetId].slice(0, playerCap)
+  const counts = new Map<string, number>()
+  for (const line of slots) counts.set(line, (counts.get(line) ?? 0) + 1)
+  return [...counts.entries()]
+    .map(
+      ([line, count]) => `${count}x ${SHIP_LABEL[line as PlayerState['line']]}`,
+    )
+    .join(', ')
+}
+
+function presetPickerHtml(playerCap: number): string {
+  const ids: PresetId[] = ['balanced', 'aggro', 'turtle', 'recon']
+  return ids
+    .map(
+      id => `
+      <button class="preset-pick" data-preset="${id}">
+        <b>${PRESET_LABEL[id]}</b><br>
+        <small>${presetSlotSummary(id, playerCap)}</small>
+      </button>`,
+    )
+    .join('')
 }
 
 function shipPickerHtml(): string {
@@ -582,6 +615,7 @@ function hideOverlay(): void {
 
 let scene: BattleScene | null = null
 let lastRound = 0
+let mySide: Team = 'A'
 
 function rosterList(players: PlayerState[], cap: number): string {
   const names = players.map(p => escapeHtml(p.username)).join(', ') || '(empty)'
@@ -606,14 +640,34 @@ function killsScoreboard(
   return `<p><b>TOP KILLS</b><br>${rows}</p>`
 }
 
-async function joinBattle(line: PlayerState['line']): Promise<void> {
-  const rsp = await fetchMatchJoin({line})
+async function joinBattle(
+  line: PlayerState['line'],
+  mode: 'individual' | 'preset',
+  presetId: PresetId | null,
+): Promise<void> {
+  const rsp = await fetchMatchJoin({line, mode, presetId})
   if (isErrorRsp(rsp)) {
     showOverlay(
       `<div class="panel"><p class="error">${escapeHtml(rsp.error)}</p></div>`,
     )
   }
   await poll()
+}
+
+function renderJoinChoice(match: Match): string {
+  const joinMode = mySide === 'A' ? match.joinModeA : match.joinModeB
+  if (joinMode === 'individual') {
+    return `<div class="ship-picker">${shipPickerHtml()}</div>`
+  }
+  if (joinMode === 'preset') {
+    return `<div class="ship-picker">${presetPickerHtml(match.playerCap)}</div>`
+  }
+  return `
+    <p>Pick your own ship, or commit your team to a squad preset:</p>
+    <div class="ship-picker">${shipPickerHtml()}</div>
+    <p>— or —</p>
+    <div class="ship-picker">${presetPickerHtml(match.playerCap)}</div>
+  `
 }
 
 function renderMatch(
@@ -636,16 +690,28 @@ function renderMatch(
           <div class="roster">TEAM A<br>${rosterList(rosterA, match.playerCap)}</div>
           <div class="roster">TEAM B<br>${rosterList(rosterB, match.playerCap)}</div>
         </div>
-        ${self ? '<p>You are in. Waiting for the round to start…</p>' : `<div class="ship-picker">${shipPickerHtml()}</div>`}
+        ${self ? '<p>You are in. Waiting for the round to start…</p>' : renderJoinChoice(match)}
       </div>
     `)
-    for (const btn of document.querySelectorAll<HTMLButtonElement>(
-      '.ship-pick',
-    )) {
-      btn.addEventListener('click', () => {
-        const line = btn.dataset.line as PlayerState['line']
-        void joinBattle(line)
-      })
+    if (!self) {
+      for (const btn of document.querySelectorAll<HTMLButtonElement>(
+        '.ship-pick',
+      )) {
+        btn.addEventListener('click', () => {
+          const line = btn.dataset.line as PlayerState['line']
+          void joinBattle(line, 'individual', null)
+        })
+      }
+      for (const btn of document.querySelectorAll<HTMLButtonElement>(
+        '.preset-pick',
+      )) {
+        btn.addEventListener('click', () => {
+          const presetId = btn.dataset.preset as PresetId
+          const slots = SQUAD_PRESETS[presetId].slice(0, match.playerCap)
+          const line = slots[0]
+          if (line) void joinBattle(line, 'preset', presetId)
+        })
+      }
     }
     return
   }
@@ -713,6 +779,7 @@ async function boot(): Promise<void> {
     showOverlay('<div class="panel"><p>Nothing to see here.</p></div>')
     return
   }
+  mySide = kind.side
 
   const game = new Phaser.Game({
     type: Phaser.AUTO,
