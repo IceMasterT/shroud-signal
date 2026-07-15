@@ -42,8 +42,8 @@ export type ShipStats = {speedMul: number; hullMul: number; dmgMul: number}
 export const SHIP_STATS: Record<ShipLine, ShipStats> = {
   fighter: {speedMul: 1.2, hullMul: 0.8, dmgMul: 1.15},
   miner: {speedMul: 0.9, hullMul: 1.1, dmgMul: 1.0},
-  transport: {speedMul: 0.75, hullMul: 1.4, dmgMul: 0.85},
-  pathfinder: {speedMul: 1.3, hullMul: 0.7, dmgMul: 1.0},
+  transport: {speedMul: 0.75, hullMul: 1.1, dmgMul: 0.85},
+  pathfinder: {speedMul: 1.3, hullMul: 0.85, dmgMul: 1.3},
   tender: {speedMul: 0.9, hullMul: 1.1, dmgMul: 0.8},
 }
 
@@ -111,7 +111,7 @@ export const ABILITY_COOLDOWN_MS: Record<ShipLine, number> = {
 export const OVERCHARGE_DURATION_MS = 5000
 export const OVERCHARGE_DAMAGE_MUL = 1.5
 export const BULWARK_DURATION_MS = 4000
-export const BULWARK_DAMAGE_MUL = 0.5
+export const BULWARK_DAMAGE_MUL = 0.6
 export const RADAR_PING_DURATION_MS = 6000
 export const TENDER_HEAL_AMOUNT = 35
 export const TENDER_HEAL_RANGE = 300

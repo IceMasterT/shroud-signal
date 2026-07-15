@@ -28,8 +28,8 @@ test('canJoinLine ignores other lines on the team', () => {
 })
 
 test('maxHullFor scales the 100-hull baseline by the line hull multiplier', () => {
-  assert.equal(maxHullFor('transport'), 140)
-  assert.equal(maxHullFor('pathfinder'), 70)
+  assert.equal(maxHullFor('transport'), 110)
+  assert.equal(maxHullFor('pathfinder'), 85)
   assert.equal(maxHullFor('miner'), 110)
 })
 
@@ -54,7 +54,7 @@ test('computeDamage applies Fighter Overcharge while active', () => {
 test('computeDamage applies Transport Bulwark on the target while active', () => {
   const shooter = {line: 'miner' as const, abilityActiveUntil: 0}
   const target = {line: 'transport' as const, abilityActiveUntil: 5000}
-  assert.equal(computeDamage(20, 1000, shooter, target), 10) // 20*1.0*0.5=10
+  assert.equal(computeDamage(20, 1000, shooter, target), 12) // 20*1.0*0.6=12
 })
 
 test('computeDamage ignores expired ability windows', () => {
