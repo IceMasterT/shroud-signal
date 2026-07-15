@@ -485,6 +485,11 @@ class BattleScene extends Phaser.Scene {
           duration: 300,
           onComplete: () => pulse.destroy(),
         })
+        // Radar Ping is a team recon tool, not a solo one — the whole team
+        // shares the reveal, not just the pathfinder who triggered it.
+        if (msg.line === 'pathfinder' && r.team === this.self?.team) {
+          this.radarPing()
+        }
       }
     } else if (msg.type === 'heal') {
       if (msg.targetUserId === this.self?.userId && this.self) {

@@ -33,6 +33,7 @@ import {
   maxHullFor,
   mineTriggeredBy,
   nearestAlly,
+  survivalCredit,
 } from './abilities.ts'
 
 const LASER_HALF_ANGLE = 0.3
@@ -564,10 +565,34 @@ async function startRound(match: Match): Promise<Match> {
   return match
 }
 
+/** The elapsed ms from round start to the last elimination on `team`, or undefined if the team was never fully wiped this round (or has no players). */
+async function teamWipeElapsedMs(
+  match: Match,
+  team: Team,
+): Promise<number | undefined> {
+  const players = await getMatchPlayers(match.matchId)
+  const ids = players.filter(p => p.team === team).map(p => p.userId)
+  if (ids.length === 0) return undefined
+  let last: number | undefined
+  for (const id of ids) {
+    const score = await redis.zScore(matchEliminatedKey(match.matchId), id)
+    if (score !== undefined && (last === undefined || score > last))
+      last = score
+  }
+  return last === undefined
+    ? undefined
+    : Math.max(0, last - match.roundStartedAt)
+}
+
 async function endRound(match: Match, winner: Team | 'tie'): Promise<Match> {
   const elapsed = Date.now() - match.roundStartedAt
-  match.survivalMsA += elapsed
-  match.survivalMsB += elapsed
+  const loserWipedAtMs =
+    winner === 'tie'
+      ? undefined
+      : await teamWipeElapsedMs(match, winner === 'A' ? 'B' : 'A')
+  const {creditA, creditB} = survivalCredit(winner, elapsed, loserWipedAtMs)
+  match.survivalMsA += creditA
+  match.survivalMsB += creditB
   if (winner === 'A') match.roundWinsA++
   else if (winner === 'B') match.roundWinsB++
   match.lastRoundWinner = winner

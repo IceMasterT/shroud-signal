@@ -96,6 +96,25 @@ export function mineTriggeredBy(
 }
 
 /**
+ * Per-round survival-time credit for the match-level tie-break: the winning
+ * team (or both, on a timeout tie) credits the full round duration, but a
+ * losing team only credits the time until its last player was actually
+ * eliminated — otherwise every round would credit both teams identically
+ * and the tie-break could never differentiate them.
+ */
+export function survivalCredit(
+  winner: Team | 'tie',
+  elapsedMs: number,
+  loserWipedAtMs: number | undefined,
+): {creditA: number; creditB: number} {
+  if (winner === 'tie') return {creditA: elapsedMs, creditB: elapsedMs}
+  const loserCredit = loserWipedAtMs ?? elapsedMs
+  return winner === 'A'
+    ? {creditA: elapsedMs, creditB: loserCredit}
+    : {creditA: loserCredit, creditB: elapsedMs}
+}
+
+/**
  * A line can be claimed from a preset's slot list as many times as it
  * appears in that list — e.g. a preset with two 'fighter' slots allows up
  * to 2 fighters on that team, independent of the general 2-per-line cap.

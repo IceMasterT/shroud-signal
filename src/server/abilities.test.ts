@@ -8,6 +8,7 @@ import {
   maxHullFor,
   mineTriggeredBy,
   nearestAlly,
+  survivalCredit,
 } from './abilities.ts'
 
 test('canJoinLine allows up to 2 of the same line', () => {
@@ -116,4 +117,29 @@ test('canClaimPresetSlot allows a line up to how many times it appears in the sl
 test('canClaimPresetSlot rejects a line not present in the slot list at all', () => {
   const slots = ['fighter', 'fighter', 'tender'] as const
   assert.equal(canClaimPresetSlot([], [...slots], 'miner'), false)
+})
+
+test('survivalCredit gives both teams the full round on a timeout tie', () => {
+  assert.deepEqual(survivalCredit('tie', 5000, undefined), {
+    creditA: 5000,
+    creditB: 5000,
+  })
+})
+
+test('survivalCredit gives the winner the full round and the loser only their wipe time', () => {
+  assert.deepEqual(survivalCredit('A', 5000, 3200), {
+    creditA: 5000,
+    creditB: 3200,
+  })
+  assert.deepEqual(survivalCredit('B', 5000, 1800), {
+    creditA: 1800,
+    creditB: 5000,
+  })
+})
+
+test('survivalCredit falls back to the full round when the loser was never actually wiped', () => {
+  assert.deepEqual(survivalCredit('A', 5000, undefined), {
+    creditA: 5000,
+    creditB: 5000,
+  })
 })
