@@ -113,6 +113,8 @@ export async function getOrCreatePlayer(
     kills: 0,
     lastLaserAt: 0,
     lastTorpedoAt: 0,
+    lastAbilityAt: 0,
+    abilityActiveUntil: 0,
     team: null,
   }
   await Promise.all([
