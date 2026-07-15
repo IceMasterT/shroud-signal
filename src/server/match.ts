@@ -4,6 +4,7 @@ import type {
   Match,
   MatchMsg,
   PlayerState,
+  PresetId,
   ShipLine,
   Team,
 } from '../shared/api.ts'
@@ -16,6 +17,7 @@ import {
   OVERCHARGE_DURATION_MS,
   ROUND_MAX_MS,
   ROUND_RESULT_DISPLAY_MS,
+  SQUAD_PRESETS,
   TENDER_HEAL_AMOUNT,
   TENDER_HEAL_RANGE,
   TORPEDO_COOLDOWN_MS,
@@ -24,6 +26,7 @@ import {
 } from '../shared/api.ts'
 import {
   abilityReady,
+  canClaimPresetSlot,
   canJoinLine,
   computeDamage,
   type Mine,
@@ -132,6 +135,10 @@ export async function createMatch(challenge: Challenge): Promise<Match> {
     playerCap: challenge.playerCap,
     warmupMinutes: challenge.warmupMinutes,
     squadRule: challenge.squadRule,
+    joinModeA: null,
+    joinModeB: null,
+    presetIdA: null,
+    presetIdB: null,
     status: 'warmup',
     round: 1,
     roundWinsA: 0,
@@ -156,6 +163,8 @@ export async function joinMatch(
   username: string,
   snoovatar: string | undefined,
   line: ShipLine,
+  mode: 'individual' | 'preset',
+  presetId: PresetId | null,
 ): Promise<PlayerState> {
   const match = await getMatch(matchId)
   if (!match) throw new Error('match not found')
@@ -168,8 +177,43 @@ export async function joinMatch(
   const players = await getMatchPlayers(matchId)
   const teammates = players.filter(p => p.team === side)
   if (teammates.length >= match.playerCap) throw new Error('team is full')
-  if (match.squadRule === 'capped' && !canJoinLine(teammates, line))
+
+  const committedMode = side === 'A' ? match.joinModeA : match.joinModeB
+  const committedPresetId = side === 'A' ? match.presetIdA : match.presetIdB
+
+  if (committedMode === null) {
+    if (mode === 'preset') {
+      if (!presetId) throw new Error('preset is required for preset mode')
+      if (side === 'A') {
+        match.joinModeA = 'preset'
+        match.presetIdA = presetId
+      } else {
+        match.joinModeB = 'preset'
+        match.presetIdB = presetId
+      }
+    } else if (side === 'A') {
+      match.joinModeA = 'individual'
+    } else {
+      match.joinModeB = 'individual'
+    }
+    await saveMatch(match)
+  } else if (committedMode !== mode) {
+    throw new Error(
+      `this team already committed to ${committedMode === 'preset' ? 'a squad preset' : 'individual picks'}`,
+    )
+  } else if (mode === 'preset' && presetId !== committedPresetId) {
+    throw new Error('this team is using a different squad preset')
+  }
+
+  if (mode === 'preset') {
+    const activePresetId = presetId ?? committedPresetId
+    if (!activePresetId) throw new Error('preset is required for preset mode')
+    const slots = SQUAD_PRESETS[activePresetId].slice(0, match.playerCap)
+    if (!canClaimPresetSlot(teammates, slots, line))
+      throw new Error(`${line} slot is already taken in this preset`)
+  } else if (match.squadRule === 'capped' && !canJoinLine(teammates, line)) {
     throw new Error(`${line} is full for this team (max 2)`)
+  }
 
   const spawn = randSpawn(side)
   const maxHull = maxHullFor(line)
