@@ -31,6 +31,7 @@ import {
   type RespondChallengeRsp,
   type ScoreReq,
   type ScoreRsp,
+  SHIP_LINES,
 } from '../shared/api.ts'
 import {
   clampPlayerCap,
@@ -377,6 +378,9 @@ async function routeMatchJoin(
   if (kind?.kind !== 'match-arena')
     return {error: 'not a match arena post', status: 400}
   const req = await readJson<JoinMatchReq>(reqMsg)
+  if (!SHIP_LINES.includes(req.line)) {
+    return {error: 'invalid ship line', status: 400}
+  }
   try {
     await joinMatch(
       kind.matchId,
