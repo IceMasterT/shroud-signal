@@ -218,7 +218,8 @@ export async function movePlayerInMatch(
   )
   const triggered = mineTriggeredBy(mines, player)
   if (!triggered) return
-  await redis.hDel(matchMinesKey(matchId), [triggered.mineId])
+  const deleted = await redis.hDel(matchMinesKey(matchId), [triggered.mineId])
+  if (deleted === 0) return
   const ownerJson = await redis.hGet(
     matchPlayersKey(matchId),
     triggered.ownerId,
