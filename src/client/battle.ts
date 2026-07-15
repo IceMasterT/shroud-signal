@@ -110,6 +110,7 @@ class BattleScene extends Phaser.Scene {
   lastTorpedoFiredAt = 0
   lastAbilityFiredAt = 0
   others = new Map<string, RemoteShip>()
+  mines = new Map<string, Phaser.GameObjects.Arc>()
   hudTop!: Phaser.GameObjects.Text
   hudBottom!: Phaser.GameObjects.Text
   starGfx!: Phaser.GameObjects.Graphics
@@ -261,9 +262,35 @@ class BattleScene extends Phaser.Scene {
     this.updateHud()
   }
 
+  placeMineVisual(mineId: string, x: number, y: number): void {
+    const mine = this.add
+      .circle(x, y, 8, 0xff9500, 0.5)
+      .setStrokeStyle(2, 0xff9500, 0.9)
+      .setDepth(12)
+    this.mines.set(mineId, mine)
+  }
+
+  detonateMineVisual(mineId: string, x: number, y: number): void {
+    this.mines.get(mineId)?.destroy()
+    this.mines.delete(mineId)
+    const ring = this.add
+      .circle(x, y, 10, 0xff5522, 0.6)
+      .setStrokeStyle(3, 0xffcc66, 1)
+      .setDepth(19)
+    this.tweens.add({
+      targets: ring,
+      radius: 70,
+      alpha: 0,
+      duration: 260,
+      onComplete: () => ring.destroy(),
+    })
+  }
+
   resetForNewRound(self: PlayerState, others: PlayerState[]): void {
     for (const r of this.others.values()) r.container.destroy()
     this.others.clear()
+    for (const m of this.mines.values()) m.destroy()
+    this.mines.clear()
     this.spawnSelf(self)
     for (const p of others) this.spawnRemote(p)
   }
@@ -430,6 +457,10 @@ class BattleScene extends Phaser.Scene {
           repeat: 1,
         })
       }
+    } else if (msg.type === 'mine_placed') {
+      this.placeMineVisual(msg.mineId, msg.x, msg.y)
+    } else if (msg.type === 'mine_detonated') {
+      this.detonateMineVisual(msg.mineId, msg.x, msg.y)
     }
   }
 
