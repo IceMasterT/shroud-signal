@@ -23,6 +23,7 @@ import {
   type JoinMatchReq,
   type JoinMatchRsp,
   type LeaderboardRsp,
+  type MatchAbilityRsp,
   type MatchStateRsp,
   type MoveReq,
   type MoveRsp,
@@ -43,6 +44,7 @@ import {
 import {dbGetCounter, dbIncCounter} from './db.ts'
 import {randomPulseLine} from './lore.ts'
 import {
+  activateAbility,
   fireWeaponInMatch,
   getMatch,
   getMatchPlayers,
@@ -76,6 +78,7 @@ type AnyRsp =
   | RespondChallengeRsp
   | ChallengeStateRsp
   | JoinMatchRsp
+  | MatchAbilityRsp
   | MatchStateRsp
   | UiResponse
   | TriggerResponse
@@ -148,6 +151,9 @@ async function route(
         break
       case Endpoint.MatchJoin:
         rsp = await routeMatchJoin(reqMsg)
+        break
+      case Endpoint.MatchAbility:
+        rsp = await routeMatchAbility()
         break
       case Endpoint.MatchState:
         rsp = await routeMatchState()
@@ -390,6 +396,21 @@ async function routeMatchJoin(
       context.snoovatar,
       req.line,
     )
+    return {ok: true}
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {error: msg, status: 400}
+  }
+}
+
+async function routeMatchAbility(): Promise<MatchAbilityRsp | ErrorRsp> {
+  const userId = context.userId
+  if (!userId) return {error: 'must be logged in', status: 401}
+  const kind = getPostKind()
+  if (kind?.kind !== 'match-arena')
+    return {error: 'not a match arena post', status: 400}
+  try {
+    await activateAbility(kind.matchId, userId)
     return {ok: true}
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
