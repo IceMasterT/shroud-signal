@@ -386,6 +386,24 @@ class BattleScene extends Phaser.Scene {
           onComplete: () => pulse.destroy(),
         })
       }
+    } else if (msg.type === 'heal') {
+      if (msg.targetUserId === this.self?.userId && this.self) {
+        this.self.hull = msg.hull
+        this.updateHud()
+      }
+      const target =
+        msg.targetUserId === this.self?.userId
+          ? this.ship
+          : this.others.get(msg.targetUserId)?.sprite
+      if (target) {
+        this.tweens.add({
+          targets: target,
+          alpha: 0.4,
+          duration: 100,
+          yoyo: true,
+          repeat: 1,
+        })
+      }
     }
   }
 
