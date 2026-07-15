@@ -1264,7 +1264,8 @@ git commit -m "Add ability key, cooldown, hint text, and activation VFX"
 - Modify: `src/server/abilities.test.ts`
 
 **Interfaces:**
-- Produces: `nearestAlly(allies, healer, range): Pick<PlayerState, 'userId'|'x'|'y'> | undefined`
+- Produces: `nearestAlly(allies, healer, range): Pick<PlayerState, 'userId'|'x'|'y'|'line'> | undefined`
+- **Correction (found while implementing Task 13):** the original version of this task typed `nearestAlly`'s allies/return as `Pick<PlayerState, 'userId'|'x'|'y'>` — missing `'line'`. Task 13 needs `maxHullFor(target.line)` on whatever `nearestAlly` returns, which doesn't compile without `line` in the `Pick`. Fixed here so Task 13 doesn't hit a dead end.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1272,16 +1273,16 @@ Append to `src/server/abilities.test.ts` (add `nearestAlly` to the existing impo
 
 ```typescript
 test('nearestAlly picks the closest ally within range and excludes self', () => {
-  const healer = {userId: 'me', x: 0, y: 0}
-  const far = {userId: 'far', x: 200, y: 0}
-  const near = {userId: 'near', x: 50, y: 0}
-  const self = {userId: 'me', x: 0, y: 0}
+  const healer = {userId: 'me', x: 0, y: 0, line: 'tender' as const}
+  const far = {userId: 'far', x: 200, y: 0, line: 'fighter' as const}
+  const near = {userId: 'near', x: 50, y: 0, line: 'miner' as const}
+  const self = {userId: 'me', x: 0, y: 0, line: 'tender' as const}
   assert.equal(nearestAlly([far, near, self], healer, 300)?.userId, 'near')
 })
 
 test('nearestAlly returns undefined when nobody is in range', () => {
-  const healer = {userId: 'me', x: 0, y: 0}
-  const far = {userId: 'far', x: 1000, y: 0}
+  const healer = {userId: 'me', x: 0, y: 0, line: 'tender' as const}
+  const far = {userId: 'far', x: 1000, y: 0, line: 'fighter' as const}
   assert.equal(nearestAlly([far], healer, 300), undefined)
 })
 ```
@@ -1298,12 +1299,12 @@ Add to `src/server/abilities.ts`:
 ```typescript
 /** Closest non-eliminated ally within range, or undefined if none qualify. */
 export function nearestAlly(
-  allies: Pick<PlayerState, 'userId' | 'x' | 'y'>[],
+  allies: Pick<PlayerState, 'userId' | 'x' | 'y' | 'line'>[],
   healer: Pick<PlayerState, 'userId' | 'x' | 'y'>,
   range: number,
-): Pick<PlayerState, 'userId' | 'x' | 'y'> | undefined {
+): Pick<PlayerState, 'userId' | 'x' | 'y' | 'line'> | undefined {
   let closest:
-    | {p: Pick<PlayerState, 'userId' | 'x' | 'y'>; d: number}
+    | {p: Pick<PlayerState, 'userId' | 'x' | 'y' | 'line'>; d: number}
     | undefined
   for (const p of allies) {
     if (p.userId === healer.userId) continue
@@ -1314,6 +1315,8 @@ export function nearestAlly(
   return closest?.p
 }
 ```
+
+(`healer` deliberately stays narrower — `'userId' | 'x' | 'y'` — since the caller in Task 13 passes the shooter/healer's own `PlayerState`, which always has every field anyway, and `healer.line` is never read inside this function.)
 
 - [ ] **Step 4: Run to verify pass**
 
