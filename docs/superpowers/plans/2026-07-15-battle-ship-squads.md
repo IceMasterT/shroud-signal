@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Scope is battle arenas only (`src/server/match.ts`, `src/client/battle.ts`). Never modify `src/server/sector.ts` or `src/client/scene.ts` for this feature.
+- Scope is battle arenas only (`src/server/match.ts`, `src/client/battle.ts`). Never modify `src/server/sector.ts` or `src/client/scene.ts` for this feature — **except**: when `PlayerState` gains a new required field, every existing `PlayerState` object-literal site (including the one in `sector.ts`'s `getOrCreatePlayer`) must set that field to an inert default (`0`/`null`) purely to satisfy the shared type, exactly like the existing `team: null` field already does. This is a type-satisfaction requirement, not a behavior change — free-play never reads these fields.
 - Squad cap: max 2 players of the same ship line per team. This is exact — not "roughly balanced," a hard rejection at join time.
 - `MAX_PLAYER_CAP` is 10 (`src/server/challenge.ts:10`) — 5 lines × cap-2 = 10, so the cap must never block a full valid roster.
 - Abilities are player-triggered (new `R` key), server-authoritative cooldown, client cooldown is feel-only — same trust model as `LASER_COOLDOWN_MS`/`TORPEDO_COOLDOWN_MS`.
@@ -21,7 +21,8 @@
 
 ## File Structure
 
-- **Modify** `src/shared/api.ts` — `ShipStats`/`SHIP_STATS`, ability tuning constants, `PlayerState.lastAbilityAt`/`abilityActiveUntil`, `JoinMatchReq`, `MatchAbilityReq`/`Rsp`, new `MatchMsg` variants, `Endpoint.MatchAbility`.
+- **Modify** `src/shared/api.ts` — `ShipStats`/`SHIP_STATS`, ability tuning constants, `PlayerState.lastAbilityAt`/`abilityActiveUntil`, `JoinMatchReq`, `MatchAbilityReq`/`Rsp`, new `MatchMsg` variants. `Endpoint.MatchAbility` is added later, in Task 9, bundled with the route handler that makes the router's exhaustiveness check pass — adding it any earlier breaks `npm run test:types` with no way to satisfy it from within `api.ts` alone.
+- **Modify** `src/server/sector.ts` — one-line inert-default addition to `getOrCreatePlayer`'s new-player `PlayerState` literal only (Task 1), required because `PlayerState` is shared. No other change in this file, ever, in this plan.
 - **Create** `src/server/abilities.ts` — pure functions: `canJoinLine`, `maxHullFor`, `abilityReady`, `computeDamage`, `nearestAlly`, `mineTriggeredBy`, plus the `Mine` type. No Redis, no I/O.
 - **Create** `src/server/abilities.test.ts` — unit tests for all of the above.
 - **Modify** `src/server/match.ts` — `joinMatch` (chosen line + cap check), `startRound` (per-line max hull), `applyDamageInMatch`/`fireWeaponInMatch`/`resolveTorpedoImpactInMatch` (scaled damage), new `activateAbility`, mine storage + detonation check in `movePlayerInMatch`.
@@ -41,7 +42,8 @@
 - Modify: `src/shared/api.ts`
 
 **Interfaces:**
-- Produces: `ShipStats` type, `SHIP_STATS: Record<ShipLine, ShipStats>`, `ABILITY_COOLDOWN_MS: Record<ShipLine, number>`, `OVERCHARGE_DURATION_MS`, `OVERCHARGE_DAMAGE_MUL`, `BULWARK_DURATION_MS`, `BULWARK_DAMAGE_MUL`, `RADAR_PING_DURATION_MS`, `TENDER_HEAL_AMOUNT`, `TENDER_HEAL_RANGE`, `PlayerState.lastAbilityAt: number`, `PlayerState.abilityActiveUntil: number`, `JoinMatchReq = {line: ShipLine}`, `MatchAbilityReq`, `MatchAbilityRsp`, `Endpoint.MatchAbility`, new `MatchMsg` variants (`'ability'`, `'heal'`, `'mine_placed'`, `'mine_detonated'`).
+- Produces: `ShipStats` type, `SHIP_STATS: Record<ShipLine, ShipStats>`, `ABILITY_COOLDOWN_MS: Record<ShipLine, number>`, `OVERCHARGE_DURATION_MS`, `OVERCHARGE_DAMAGE_MUL`, `BULWARK_DURATION_MS`, `BULWARK_DAMAGE_MUL`, `RADAR_PING_DURATION_MS`, `TENDER_HEAL_AMOUNT`, `TENDER_HEAL_RANGE`, `PlayerState.lastAbilityAt: number`, `PlayerState.abilityActiveUntil: number`, `JoinMatchReq = {line: ShipLine}`, `MatchAbilityReq`, `MatchAbilityRsp`, new `MatchMsg` variants (`'ability'`, `'heal'`, `'mine_placed'`, `'mine_detonated'`).
+- **Not in this task:** `Endpoint.MatchAbility`/`EndpointMethod[Endpoint.MatchAbility]` are added in Task 9 instead, bundled with the route handler. Adding the endpoint constant here, before any switch case handles it, breaks `server.ts`'s `endpoint satisfies never` exhaustiveness check with no way to fix that from within `api.ts` — confirmed by running `npm run test:types` against that ordering.
 
 - [ ] **Step 1: Add the ship stat table and ability tuning constants**
 
@@ -134,48 +136,86 @@ Find the `MatchMsg` union's `{type: 'kills'; userId: string; kills: number}` lin
 
 (replace the single `{type: 'kills'; ...}` line with this whole block — don't duplicate it)
 
-- [ ] **Step 5: Add the `MatchAbility` endpoint**
+- [ ] **Step 5: Give the two existing `PlayerState` literals inert defaults for the new fields**
 
-In `export const Endpoint = {...}`, change:
+`PlayerState` is shared, and adding required fields to it breaks every existing object-literal construction of it until they're updated — there are exactly two, and both need a two-line addition so the build stays green after this task:
 
-```typescript
-  MatchJoin: 'api/match/join',
-  MatchState: 'api/match/state',
-```
+`src/server/sector.ts`'s `getOrCreatePlayer`, the new-player branch — must set the two new fields to satisfy the type, exactly like it already does for `team: null`. Free-play never reads these two fields; this is a type-satisfaction requirement, not a behavior change, and is the ONLY change this plan ever makes to `sector.ts`.
 
-to:
+In `src/server/sector.ts`, find the new-player `PlayerState` literal in `getOrCreatePlayer`:
 
 ```typescript
-  MatchJoin: 'api/match/join',
-  MatchAbility: 'api/match/ability',
-  MatchState: 'api/match/state',
+  const player: PlayerState = {
+    userId,
+    username,
+    snoovatar: snoovatarOrNull,
+    line: lineForUser(userId),
+    x: spawn.x,
+    y: spawn.y,
+    rotation: 0,
+    hull: START_HULL,
+    score: 0,
+    kills: 0,
+    lastLaserAt: 0,
+    lastTorpedoAt: 0,
+    team: null,
+  }
 ```
 
-In `export const EndpointMethod = {...}`, change:
+and change it to:
 
 ```typescript
-  [Endpoint.MatchJoin]: 'POST',
-  [Endpoint.MatchState]: 'GET',
+  const player: PlayerState = {
+    userId,
+    username,
+    snoovatar: snoovatarOrNull,
+    line: lineForUser(userId),
+    x: spawn.x,
+    y: spawn.y,
+    rotation: 0,
+    hull: START_HULL,
+    score: 0,
+    kills: 0,
+    lastLaserAt: 0,
+    lastTorpedoAt: 0,
+    lastAbilityAt: 0,
+    abilityActiveUntil: 0,
+    team: null,
+  }
 ```
 
-to:
+`src/server/match.ts`'s `joinMatch` — find:
 
 ```typescript
-  [Endpoint.MatchJoin]: 'POST',
-  [Endpoint.MatchAbility]: 'POST',
-  [Endpoint.MatchState]: 'GET',
+    lastLaserAt: 0,
+    lastTorpedoAt: 0,
+    team: side,
+  }
 ```
+
+and change it to:
+
+```typescript
+    lastLaserAt: 0,
+    lastTorpedoAt: 0,
+    lastAbilityAt: 0,
+    abilityActiveUntil: 0,
+    team: side,
+  }
+```
+
+(Task 3 rewrites this whole function later to add the chosen-line/squad-cap logic — these two lines will already be there and Task 3's replacement includes them again, which is fine, just don't skip this step waiting for Task 3.)
 
 - [ ] **Step 6: Verify it compiles**
 
 Run: `npm run test:types`
-Expected: no output, exit code 0 (there are no consumers of the new fields yet, so nothing should fail — this just confirms the new syntax itself is valid TypeScript).
+Expected: no output, exit code 0 — a genuinely clean compile, not "clean except for a known error elsewhere." If you see `TS2739: ... missing the following properties from type 'PlayerState'`, one of the two literals in Step 5 wasn't updated. If you see `TS1360: Type '"api/match/ability"' does not satisfy the expected type 'never'`, you added the `Endpoint.MatchAbility` entries — this task deliberately does not (see the Interfaces note above); remove them.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/shared/api.ts
-git commit -m "Add ship stats, ability constants, and ability endpoint types"
+git add src/shared/api.ts src/server/sector.ts src/server/match.ts
+git commit -m "Add ship stats, ability constants, and ability types"
 ```
 
 ---
@@ -977,11 +1017,47 @@ git commit -m "Add activateAbility (Fighter/Transport) and per-shot scaled damag
 
 **Files:**
 - Modify: `src/server/server.ts`
+- Modify: `src/shared/api.ts`
 
 **Interfaces:**
 - Consumes: `activateAbility` from `./match.ts` (Task 8), `MatchAbilityRsp` from `../shared/api.ts` (Task 1)
+- Produces: `Endpoint.MatchAbility`, `EndpointMethod[Endpoint.MatchAbility]`
 
-- [ ] **Step 1: Add imports**
+- [ ] **Step 1: Add the `MatchAbility` endpoint**
+
+Task 1 deliberately left this out (adding it before any switch case handled it broke `server.ts`'s exhaustiveness check). Add it now, in `src/shared/api.ts`, right before adding the case that handles it.
+
+In `export const Endpoint = {...}`, change:
+
+```typescript
+  MatchJoin: 'api/match/join',
+  MatchState: 'api/match/state',
+```
+
+to:
+
+```typescript
+  MatchJoin: 'api/match/join',
+  MatchAbility: 'api/match/ability',
+  MatchState: 'api/match/state',
+```
+
+In `export const EndpointMethod = {...}`, change:
+
+```typescript
+  [Endpoint.MatchJoin]: 'POST',
+  [Endpoint.MatchState]: 'GET',
+```
+
+to:
+
+```typescript
+  [Endpoint.MatchJoin]: 'POST',
+  [Endpoint.MatchAbility]: 'POST',
+  [Endpoint.MatchState]: 'GET',
+```
+
+- [ ] **Step 2: Add imports**
 
 Add `type MatchAbilityRsp,` to the `'../shared/api.ts'` import block (alphabetical, near `type LeaderboardRsp,`).
 
@@ -989,7 +1065,7 @@ Add `activateAbility,` to the `import {..., fireWeaponInMatch, ...} from './matc
 
 Add `MatchAbilityRsp` to the `AnyRsp` union type (alphabetical, near `MatchStateRsp`).
 
-- [ ] **Step 2: Add the route handler**
+- [ ] **Step 3: Add the route handler**
 
 Add after `routeMatchJoin`:
 
@@ -1010,7 +1086,7 @@ async function routeMatchAbility(): Promise<MatchAbilityRsp | ErrorRsp> {
 }
 ```
 
-- [ ] **Step 3: Wire it into the router**
+- [ ] **Step 4: Wire it into the router**
 
 In the `route` function's switch, change:
 
@@ -1033,15 +1109,15 @@ to:
       case Endpoint.MatchState:
 ```
 
-- [ ] **Step 4: Run the full test suite**
+- [ ] **Step 5: Run the full test suite**
 
 Run: `npm run test`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/server/server.ts
+git add src/server/server.ts src/shared/api.ts
 git commit -m "Add /api/match/ability route"
 ```
 
