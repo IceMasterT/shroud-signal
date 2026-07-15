@@ -12,6 +12,7 @@ import {
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   matchChannel,
+  RADAR_PING_DURATION_MS,
   SHIP_LINES,
   SHIP_STATS,
   TORPEDO_COOLDOWN_MS,
@@ -83,8 +84,10 @@ type RemoteShip = {
   container: Phaser.GameObjects.Container
   sprite: Phaser.GameObjects.Image
   label: Phaser.GameObjects.Text
+  hullLabel: Phaser.GameObjects.Text
   team: Team
   eliminated: boolean
+  hull: number
   targetX: number
   targetY: number
   targetRotation: number
@@ -210,6 +213,7 @@ class BattleScene extends Phaser.Scene {
       existing.targetY = p.y
       existing.targetRotation = p.rotation
       existing.eliminated = false
+      existing.hull = p.hull
       existing.container.setVisible(true)
       return
     }
@@ -223,13 +227,25 @@ class BattleScene extends Phaser.Scene {
         color: '#9fb4c9',
       })
       .setOrigin(0.5, 0)
-    const container = this.add.container(p.x, p.y, [sprite, label]).setDepth(15)
+    const hullLabel = this.add
+      .text(0, -30, '', {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: '#ffe08a',
+      })
+      .setOrigin(0.5, 1)
+      .setVisible(false)
+    const container = this.add
+      .container(p.x, p.y, [sprite, label, hullLabel])
+      .setDepth(15)
     this.others.set(p.userId, {
       container,
       sprite,
       label,
+      hullLabel,
       team: p.team,
       eliminated: false,
+      hull: p.hull,
       targetX: p.x,
       targetY: p.y,
       targetRotation: p.rotation,
@@ -311,6 +327,15 @@ class BattleScene extends Phaser.Scene {
     })
   }
 
+  radarPing(): void {
+    for (const r of this.others.values()) {
+      r.hullLabel.setText(String(r.hull)).setVisible(true)
+    }
+    this.time.delayedCall(RADAR_PING_DURATION_MS, () => {
+      for (const r of this.others.values()) r.hullLabel.setVisible(false)
+    })
+  }
+
   updateHud(): void {
     if (!this.self) return
     const alive = [...this.others.values()].filter(r => !r.eliminated)
@@ -352,6 +377,7 @@ class BattleScene extends Phaser.Scene {
       } else {
         const r = this.others.get(msg.targetUserId)
         if (r) {
+          r.hull = msg.hull
           r.sprite.setTint(0xff3344).setTintMode(Phaser.TintModes.FILL)
           this.time.delayedCall(120, () => {
             if (r.team === 'B') r.sprite.setTint(0xffb060)
@@ -445,6 +471,7 @@ class BattleScene extends Phaser.Scene {
       nowMs - this.lastAbilityFiredAt > ABILITY_COOLDOWN_MS[this.self.line]
     ) {
       this.lastAbilityFiredAt = nowMs
+      if (this.self.line === 'pathfinder') this.radarPing()
       void fetchMatchAbility()
     }
 
