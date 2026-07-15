@@ -143,6 +143,9 @@ export type PostKind =
   | {kind: 'challenge'; challengeId: string; role: 'challenger' | 'target'}
   | {kind: 'match-arena'; matchId: string; side: Team}
 
+export type SquadRule = 'capped' | 'custom'
+export const SQUAD_RULES: readonly SquadRule[] = ['capped', 'custom']
+
 export type ChallengeStatus =
   | 'pending'
   | 'countered'
@@ -160,8 +163,10 @@ export type Challenge = {
   targetSubredditName: string
   playerCap: number
   warmupMinutes: number
+  squadRule: SquadRule
   counterPlayerCap: number | null
   counterWarmupMinutes: number | null
+  counterSquadRule: SquadRule | null
   status: ChallengeStatus
   createdAt: number
   matchId: string | null
@@ -173,6 +178,7 @@ export type CreateChallengeReq = {
   targetSubredditName: string
   playerCap: number
   warmupMinutes: number
+  squadRule: SquadRule
 }
 export type CreateChallengeRsp = {challengeId: string}
 
@@ -186,6 +192,7 @@ export type RespondChallengeReq = {
   action: ChallengeAction
   playerCap?: number
   warmupMinutes?: number
+  squadRule?: SquadRule
 }
 /** `challengeStatus`, not `status` — the latter is reserved by the router for the HTTP status code. */
 export type RespondChallengeRsp = {
@@ -216,6 +223,7 @@ export type Match = {
   subredditBName: string
   playerCap: number
   warmupMinutes: number
+  squadRule: SquadRule
   status: MatchStatus
   round: number
   roundWinsA: number
