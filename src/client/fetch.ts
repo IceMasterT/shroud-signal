@@ -22,6 +22,8 @@ import {
   type RespondChallengeRsp,
   type ScoreReq,
   type ScoreRsp,
+  type SectorJoinReq,
+  type SectorJoinRsp,
 } from '../shared/api.ts'
 
 export function isErrorRsp(x: unknown): x is ErrorRsp {
@@ -123,6 +125,12 @@ export function fetchInit(): Promise<InitRsp | undefined> {
 
 export function fetchMove(req: MoveReq): Promise<MoveRsp | undefined> {
   return postJson<MoveReq, MoveRsp>(Endpoint.Move, req)
+}
+
+export function fetchSectorJoin(
+  req: SectorJoinReq,
+): Promise<SectorJoinRsp | ErrorRsp> {
+  return postJsonOrError<SectorJoinReq, SectorJoinRsp>(Endpoint.SectorJoin, req)
 }
 
 export function fetchLeave(): Promise<Response> {

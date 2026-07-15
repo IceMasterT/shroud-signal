@@ -125,6 +125,20 @@ export async function getOrCreatePlayer(
   return player
 }
 
+/** Sets (or changes) a player's chosen ship line, creating them first if this is their first visit. */
+export async function setPlayerLine(
+  postId: string,
+  userId: string,
+  username: string,
+  snoovatar: string | undefined,
+  line: ShipLine,
+): Promise<PlayerState> {
+  const player = await getOrCreatePlayer(postId, userId, username, snoovatar)
+  player.line = line
+  await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(player)})
+  return player
+}
+
 async function readHull(postId: string, userId: string): Promise<number> {
   const v = await redis.hGet(hullKey(postId), userId)
   return v === undefined ? START_HULL : Number(v)

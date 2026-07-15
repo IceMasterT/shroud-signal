@@ -15,6 +15,8 @@ import {
   fetchLeave,
   fetchMove,
   fetchScore,
+  fetchSectorJoin,
+  isErrorRsp,
 } from './fetch.ts'
 import {TouchButton, VirtualJoystick} from './touchControls.ts'
 
@@ -89,6 +91,8 @@ export class SectorScene extends Phaser.Scene {
   async create(): Promise<void> {
     const W = this.scale.width
     const H = this.scale.height
+
+    const chosenLine = await this.showShipPicker()
 
     // Starfield — pre-rolled positions, drawn once, cheap.
     this.starGfx = this.add.graphics().setDepth(0)
@@ -190,6 +194,11 @@ export class SectorScene extends Phaser.Scene {
       .setVisible(false)
     kb.on('keydown-L', () => void this.toggleLeaderboard())
 
+    const joined = await fetchSectorJoin({line: chosenLine})
+    if (isErrorRsp(joined)) {
+      this.hudName.setText('Failed to join — reload to retry')
+      return
+    }
     const init = await fetchInit()
     if (!init) {
       this.hudName.setText('Failed to connect — reload to retry')
@@ -238,6 +247,66 @@ export class SectorScene extends Phaser.Scene {
           }
         })
       },
+    })
+  }
+
+  private showShipPicker(): Promise<PlayerState['line']> {
+    const W = this.scale.width
+    const H = this.scale.height
+    const lines: PlayerState['line'][] = [
+      'fighter',
+      'miner',
+      'transport',
+      'pathfinder',
+      'tender',
+    ]
+    const objects: Phaser.GameObjects.GameObject[] = [
+      this.add
+        .rectangle(W / 2, H / 2, W, H, 0x050c18, 0.92)
+        .setScrollFactor(0)
+        .setDepth(200),
+      this.add
+        .text(W / 2, H / 2 - 90, 'CHOOSE YOUR SHIP', {
+          fontFamily: 'monospace',
+          fontSize: '16px',
+          color: '#eef6ff',
+        })
+        .setOrigin(0.5, 0.5)
+        .setScrollFactor(0)
+        .setDepth(201),
+    ]
+
+    return new Promise(resolve => {
+      const cardW = 140
+      const cardH = 90
+      const gap = 16
+      const totalW = lines.length * cardW + (lines.length - 1) * gap
+      const startX = W / 2 - totalW / 2 + cardW / 2
+      for (const [i, line] of lines.entries()) {
+        const x = startX + i * (cardW + gap)
+        const y = H / 2
+        const card = this.add
+          .rectangle(x, y, cardW, cardH, 0x141a28, 1)
+          .setStrokeStyle(1, 0xff9500)
+          .setScrollFactor(0)
+          .setDepth(201)
+          .setInteractive({useHandCursor: true})
+        const label = this.add
+          .text(x, y, SHIP_LABEL[line], {
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            color: '#eef6ff',
+            align: 'center',
+          })
+          .setOrigin(0.5, 0.5)
+          .setScrollFactor(0)
+          .setDepth(202)
+        objects.push(card, label)
+        card.on('pointerdown', () => {
+          for (const obj of objects) obj.destroy()
+          resolve(line)
+        })
+      }
     })
   }
 

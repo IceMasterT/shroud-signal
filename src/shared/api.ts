@@ -147,6 +147,10 @@ export type InitRsp = {
 export type MoveReq = {x: number; y: number; rotation: number}
 export type MoveRsp = {ok: true}
 
+/** Set (or change) the caller's ship line for this sector, before init spawns them. */
+export type SectorJoinReq = {line: ShipLine}
+export type SectorJoinRsp = {ok: true}
+
 /**
  * Fire the ship's weapon. No client-supplied geometry — the server fires
  * from the shooter's own authoritative last-known position/facing so a
@@ -355,6 +359,7 @@ export const Endpoint = {
   GetCounter: 'api/counter',
   IncCounter: 'api/counter/inc',
   Init: 'api/init',
+  SectorJoin: 'api/sector/join',
   Move: 'api/move',
   Leave: 'api/leave',
   Score: 'api/score',
@@ -376,6 +381,7 @@ export const EndpointMethod = {
   [Endpoint.GetCounter]: 'GET',
   [Endpoint.IncCounter]: 'POST',
   [Endpoint.Init]: 'GET',
+  [Endpoint.SectorJoin]: 'POST',
   [Endpoint.Move]: 'POST',
   [Endpoint.Leave]: 'POST',
   [Endpoint.Score]: 'POST',

@@ -32,6 +32,8 @@ import {
   type RespondChallengeRsp,
   type ScoreReq,
   type ScoreRsp,
+  type SectorJoinReq,
+  type SectorJoinRsp,
   SHIP_LINES,
   SQUAD_PRESETS,
   SQUAD_RULES,
@@ -64,6 +66,7 @@ import {
   movePlayer,
   pulseActiveSectors,
   sectorChannel,
+  setPlayerLine,
   topPilots,
   touchActiveSector,
 } from './sector.ts'
@@ -72,6 +75,7 @@ type AnyRsp =
   | GetCounterRsp
   | IncCounterRsp
   | InitRsp
+  | SectorJoinRsp
   | MoveRsp
   | ScoreRsp
   | FireRsp
@@ -126,6 +130,9 @@ async function route(
         break
       case Endpoint.Init:
         rsp = await routeInit()
+        break
+      case Endpoint.SectorJoin:
+        rsp = await routeSectorJoin(reqMsg)
         break
       case Endpoint.Move:
         rsp = await routeMove(reqMsg)
@@ -211,6 +218,22 @@ async function routeInit(): Promise<InitRsp | ErrorRsp> {
   await announceJoin(postId, player)
   await touchActiveSector(postId)
   return {postId, channel: sectorChannel(postId), player, others}
+}
+
+async function routeSectorJoin(
+  reqMsg: IncomingMessage,
+): Promise<SectorJoinRsp | ErrorRsp> {
+  const postId = context.postId
+  const userId = context.userId
+  if (!postId) return {error: 'no postId', status: 400}
+  if (!userId) return {error: 'must be logged in', status: 401}
+  const username = context.username ?? 'anonymous'
+  const req = await readJson<SectorJoinReq>(reqMsg)
+  if (!SHIP_LINES.includes(req.line)) {
+    return {error: 'invalid ship line', status: 400}
+  }
+  await setPlayerLine(postId, userId, username, context.snoovatar, req.line)
+  return {ok: true}
 }
 
 async function routeMove(reqMsg: IncomingMessage): Promise<MoveRsp | ErrorRsp> {
