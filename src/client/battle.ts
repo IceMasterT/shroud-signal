@@ -19,6 +19,7 @@ import {
   SQUAD_PRESETS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
+  TORPEDO_SPEED,
 } from '../shared/api.ts'
 import {
   fetchFire,
@@ -429,9 +430,12 @@ class BattleScene extends Phaser.Scene {
     } else if (msg.type === 'move') {
       this.spawnRemote(msg.player)
     } else if (msg.type === 'shot') {
-      if (msg.mode === 'laser') {
-        if (msg.userId !== this.self?.userId)
-          this.fireLaser(msg.x, msg.y, msg.rotation)
+      if (msg.userId === this.self?.userId) {
+        // Already drawn optimistically the instant the local player fired —
+        // re-drawing here would either double it up (laser) or make it wait
+        // on the realtime round-trip before appearing at all (torpedo).
+      } else if (msg.mode === 'laser') {
+        this.fireLaser(msg.x, msg.y, msg.rotation)
       } else {
         this.fireTorpedo(msg.x, msg.y, msg.rotation, msg.travelMs)
       }
@@ -551,6 +555,12 @@ class BattleScene extends Phaser.Scene {
       nowMs - this.lastTorpedoFiredAt > TORPEDO_COOLDOWN_MS
     ) {
       this.lastTorpedoFiredAt = nowMs
+      this.fireTorpedo(
+        this.ship.x,
+        this.ship.y,
+        this.ship.rotation,
+        (TORPEDO_RANGE / TORPEDO_SPEED) * 1000,
+      )
       void fetchFire({mode: 'torpedo'})
     }
     if (
