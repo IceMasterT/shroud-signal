@@ -5,6 +5,7 @@ import {
   canJoinLine,
   computeDamage,
   maxHullFor,
+  nearestAlly,
 } from './abilities.ts'
 
 test('canJoinLine allows up to 2 of the same line', () => {
@@ -57,4 +58,18 @@ test('computeDamage ignores expired ability windows', () => {
   const shooter = {line: 'fighter' as const, abilityActiveUntil: 500}
   const target = {line: 'miner' as const, abilityActiveUntil: 0}
   assert.equal(computeDamage(20, 1000, shooter, target), 23) // now(1000) >= 500, no bonus
+})
+
+test('nearestAlly picks the closest ally within range and excludes self', () => {
+  const healer = {userId: 'me', x: 0, y: 0}
+  const far = {userId: 'far', x: 200, y: 0}
+  const near = {userId: 'near', x: 50, y: 0}
+  const self = {userId: 'me', x: 0, y: 0}
+  assert.equal(nearestAlly([far, near, self], healer, 300)?.userId, 'near')
+})
+
+test('nearestAlly returns undefined when nobody is in range', () => {
+  const healer = {userId: 'me', x: 0, y: 0}
+  const far = {userId: 'far', x: 1000, y: 0}
+  assert.equal(nearestAlly([far], healer, 300), undefined)
 })

@@ -53,3 +53,21 @@ export function computeDamage(
   }
   return Math.max(1, Math.round(dmg))
 }
+
+/** Closest non-eliminated ally within range, or undefined if none qualify. */
+export function nearestAlly(
+  allies: Pick<PlayerState, 'userId' | 'x' | 'y'>[],
+  healer: Pick<PlayerState, 'userId' | 'x' | 'y'>,
+  range: number,
+): Pick<PlayerState, 'userId' | 'x' | 'y'> | undefined {
+  let closest:
+    | {p: Pick<PlayerState, 'userId' | 'x' | 'y'>; d: number}
+    | undefined
+  for (const p of allies) {
+    if (p.userId === healer.userId) continue
+    const d = Math.hypot(p.x - healer.x, p.y - healer.y)
+    if (d > range) continue
+    if (!closest || d < closest.d) closest = {p, d}
+  }
+  return closest?.p
+}
