@@ -131,6 +131,7 @@ export async function createMatch(challenge: Challenge): Promise<Match> {
     subredditBName: challenge.targetSubredditName,
     playerCap: challenge.playerCap,
     warmupMinutes: challenge.warmupMinutes,
+    squadRule: challenge.squadRule,
     status: 'warmup',
     round: 1,
     roundWinsA: 0,
@@ -167,7 +168,7 @@ export async function joinMatch(
   const players = await getMatchPlayers(matchId)
   const teammates = players.filter(p => p.team === side)
   if (teammates.length >= match.playerCap) throw new Error('team is full')
-  if (!canJoinLine(teammates, line))
+  if (match.squadRule === 'capped' && !canJoinLine(teammates, line))
     throw new Error(`${line} is full for this team (max 2)`)
 
   const spawn = randSpawn(side)
