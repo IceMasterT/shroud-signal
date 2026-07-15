@@ -56,12 +56,12 @@ export function computeDamage(
 
 /** Closest non-eliminated ally within range, or undefined if none qualify. */
 export function nearestAlly(
-  allies: Pick<PlayerState, 'userId' | 'x' | 'y'>[],
+  allies: Pick<PlayerState, 'userId' | 'x' | 'y' | 'line'>[],
   healer: Pick<PlayerState, 'userId' | 'x' | 'y'>,
   range: number,
-): Pick<PlayerState, 'userId' | 'x' | 'y'> | undefined {
+): Pick<PlayerState, 'userId' | 'x' | 'y' | 'line'> | undefined {
   let closest:
-    | {p: Pick<PlayerState, 'userId' | 'x' | 'y'>; d: number}
+    | {p: Pick<PlayerState, 'userId' | 'x' | 'y' | 'line'>; d: number}
     | undefined
   for (const p of allies) {
     if (p.userId === healer.userId) continue

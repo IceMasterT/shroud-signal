@@ -61,15 +61,15 @@ test('computeDamage ignores expired ability windows', () => {
 })
 
 test('nearestAlly picks the closest ally within range and excludes self', () => {
-  const healer = {userId: 'me', x: 0, y: 0}
-  const far = {userId: 'far', x: 200, y: 0}
-  const near = {userId: 'near', x: 50, y: 0}
-  const self = {userId: 'me', x: 0, y: 0}
+  const healer = {userId: 'me', x: 0, y: 0, line: 'tender' as const}
+  const far = {userId: 'far', x: 200, y: 0, line: 'fighter' as const}
+  const near = {userId: 'near', x: 50, y: 0, line: 'miner' as const}
+  const self = {userId: 'me', x: 0, y: 0, line: 'tender' as const}
   assert.equal(nearestAlly([far, near, self], healer, 300)?.userId, 'near')
 })
 
 test('nearestAlly returns undefined when nobody is in range', () => {
-  const healer = {userId: 'me', x: 0, y: 0}
-  const far = {userId: 'far', x: 1000, y: 0}
+  const healer = {userId: 'me', x: 0, y: 0, line: 'tender' as const}
+  const far = {userId: 'far', x: 1000, y: 0, line: 'fighter' as const}
   assert.equal(nearestAlly([far], healer, 300), undefined)
 })
