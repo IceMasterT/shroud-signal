@@ -20,7 +20,6 @@ import {
 } from '../shared/api.ts'
 import {canJoinLine, maxHullFor} from './abilities.ts'
 
-const START_HULL = 100
 const LASER_HALF_ANGLE = 0.3
 const LASER_DAMAGE = 20
 const TORPEDO_DAMAGE = 45

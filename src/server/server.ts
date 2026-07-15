@@ -20,6 +20,7 @@ import {
   type IncCounterReq,
   type IncCounterRsp,
   type InitRsp,
+  type JoinMatchReq,
   type JoinMatchRsp,
   type LeaderboardRsp,
   type MatchStateRsp,
@@ -145,7 +146,7 @@ async function route(
         rsp = await routeChallengeState()
         break
       case Endpoint.MatchJoin:
-        rsp = await routeMatchJoin()
+        rsp = await routeMatchJoin(reqMsg)
         break
       case Endpoint.MatchState:
         rsp = await routeMatchState()
@@ -366,13 +367,16 @@ async function routeChallengeState(): Promise<ChallengeStateRsp | ErrorRsp> {
   return {challenge}
 }
 
-async function routeMatchJoin(): Promise<JoinMatchRsp | ErrorRsp> {
+async function routeMatchJoin(
+  reqMsg: IncomingMessage,
+): Promise<JoinMatchRsp | ErrorRsp> {
   const userId = context.userId
   const username = context.username ?? 'anonymous'
   if (!userId) return {error: 'must be logged in', status: 401}
   const kind = getPostKind()
   if (kind?.kind !== 'match-arena')
     return {error: 'not a match arena post', status: 400}
+  const req = await readJson<JoinMatchReq>(reqMsg)
   try {
     await joinMatch(
       kind.matchId,
@@ -380,6 +384,7 @@ async function routeMatchJoin(): Promise<JoinMatchRsp | ErrorRsp> {
       userId,
       username,
       context.snoovatar,
+      req.line,
     )
     return {ok: true}
   } catch (err) {
