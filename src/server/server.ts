@@ -33,6 +33,7 @@ import {
   type ScoreReq,
   type ScoreRsp,
   SHIP_LINES,
+  SQUAD_RULES,
 } from '../shared/api.ts'
 import {
   clampPlayerCap,
@@ -313,6 +314,9 @@ async function routeChallengeCreate(
   if (!isFiniteNumber(req.playerCap) || !isFiniteNumber(req.warmupMinutes)) {
     return {error: 'invalid challenge payload', status: 400}
   }
+  if (!SQUAD_RULES.includes(req.squadRule)) {
+    return {error: 'invalid squad rule', status: 400}
+  }
   try {
     const challenge = await createChallenge(
       postId,
@@ -321,6 +325,7 @@ async function routeChallengeCreate(
       req.targetSubredditName.replace(/^r\//i, '').trim(),
       clampPlayerCap(req.playerCap),
       clampWarmupMinutes(req.warmupMinutes),
+      req.squadRule,
     )
     return {challengeId: challenge.challengeId}
   } catch (err) {
@@ -349,6 +354,9 @@ async function routeChallengeRespond(
   if (!validActions.includes(req.action)) {
     return {error: 'invalid challenge action', status: 400}
   }
+  if (req.squadRule !== undefined && !SQUAD_RULES.includes(req.squadRule)) {
+    return {error: 'invalid squad rule', status: 400}
+  }
   try {
     const result = await respondChallenge(
       kind.challengeId,
@@ -356,6 +364,7 @@ async function routeChallengeRespond(
       req.action,
       req.playerCap,
       req.warmupMinutes,
+      req.squadRule,
     )
     return result
   } catch (err) {
