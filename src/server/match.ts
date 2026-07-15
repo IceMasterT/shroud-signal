@@ -26,7 +26,9 @@ import {
   abilityReady,
   canJoinLine,
   computeDamage,
+  type Mine,
   maxHullFor,
+  mineTriggeredBy,
   nearestAlly,
 } from './abilities.ts'
 
@@ -49,6 +51,9 @@ function matchEliminatedKey(matchId: string): string {
 }
 function matchKillsKey(matchId: string): string {
   return `match:${matchId}:kills`
+}
+function matchMinesKey(matchId: string): string {
+  return `match:${matchId}:mines`
 }
 
 function randomId(): string {
@@ -205,6 +210,29 @@ export async function movePlayerInMatch(
   player.rotation = rotation
   await redis.hSet(matchPlayersKey(matchId), {[userId]: JSON.stringify(player)})
   await broadcastMatch(matchId, {type: 'move', player})
+
+  if (await isEliminated(matchId, userId)) return
+  const minesRaw = await redis.hGetAll(matchMinesKey(matchId))
+  const mines: Mine[] = Object.values(minesRaw ?? {}).map(
+    json => JSON.parse(json) as Mine,
+  )
+  const triggered = mineTriggeredBy(mines, player)
+  if (!triggered) return
+  await redis.hDel(matchMinesKey(matchId), [triggered.mineId])
+  const ownerJson = await redis.hGet(
+    matchPlayersKey(matchId),
+    triggered.ownerId,
+  )
+  if (!ownerJson) return
+  const owner = JSON.parse(ownerJson) as PlayerState
+  await broadcastMatch(matchId, {
+    type: 'mine_detonated',
+    mineId: triggered.mineId,
+    targetUserId: userId,
+    x: triggered.x,
+    y: triggered.y,
+  })
+  await applyDamageInMatch(matchId, owner, player, TORPEDO_DAMAGE)
 }
 
 export async function fireWeaponInMatch(
@@ -390,6 +418,27 @@ export async function activateAbility(
     }
   }
 
+  if (shooter.line === 'miner') {
+    const mineId = `${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const mine: Mine = {
+      mineId,
+      ownerId: userId,
+      team: shooter.team ?? 'A',
+      x: shooter.x,
+      y: shooter.y,
+    }
+    await redis.hSet(matchMinesKey(matchId), {
+      [mineId]: JSON.stringify(mine),
+    })
+    await broadcastMatch(matchId, {
+      type: 'mine_placed',
+      mineId,
+      ownerId: userId,
+      x: shooter.x,
+      y: shooter.y,
+    })
+  }
+
   await broadcastMatch(matchId, {type: 'ability', userId, line: shooter.line})
 }
 
@@ -437,6 +486,7 @@ async function applyDamageInMatch(
 async function startRound(match: Match): Promise<Match> {
   const players = await getMatchPlayers(match.matchId)
   await redis.del(matchEliminatedKey(match.matchId))
+  await redis.del(matchMinesKey(match.matchId))
   for (const p of players) {
     if (!p.team) continue
     const spawn = randSpawn(p.team)
