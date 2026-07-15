@@ -94,3 +94,18 @@ export function mineTriggeredBy(
   }
   return undefined
 }
+
+/**
+ * A line can be claimed from a preset's slot list as many times as it
+ * appears in that list — e.g. a preset with two 'fighter' slots allows up
+ * to 2 fighters on that team, independent of the general 2-per-line cap.
+ */
+export function canClaimPresetSlot(
+  teammates: Pick<PlayerState, 'line'>[],
+  slots: ShipLine[],
+  line: ShipLine,
+): boolean {
+  const available = slots.filter(l => l === line).length
+  const claimed = teammates.filter(p => p.line === line).length
+  return claimed < available
+}

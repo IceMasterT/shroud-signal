@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {test} from 'node:test'
 import {
   abilityReady,
+  canClaimPresetSlot,
   canJoinLine,
   computeDamage,
   maxHullFor,
@@ -93,4 +94,26 @@ test('mineTriggeredBy detonates when an enemy is within blast radius', () => {
 test('mineTriggeredBy ignores mines out of blast radius', () => {
   const mines = [{mineId: 'm1', ownerId: 'x', team: 'A' as const, x: 0, y: 0}]
   assert.equal(mineTriggeredBy(mines, {team: 'B', x: 500, y: 500}), undefined)
+})
+
+test('canClaimPresetSlot allows a line up to how many times it appears in the slot list', () => {
+  const slots = ['fighter', 'fighter', 'tender'] as const
+  assert.equal(canClaimPresetSlot([], [...slots], 'fighter'), true)
+  assert.equal(
+    canClaimPresetSlot([{line: 'fighter'}], [...slots], 'fighter'),
+    true,
+  )
+  assert.equal(
+    canClaimPresetSlot(
+      [{line: 'fighter'}, {line: 'fighter'}],
+      [...slots],
+      'fighter',
+    ),
+    false,
+  )
+})
+
+test('canClaimPresetSlot rejects a line not present in the slot list at all', () => {
+  const slots = ['fighter', 'fighter', 'tender'] as const
+  assert.equal(canClaimPresetSlot([], [...slots], 'miner'), false)
 })
