@@ -178,8 +178,10 @@ export async function joinMatch(
   const teammates = players.filter(p => p.team === side)
   if (teammates.length >= match.playerCap) throw new Error('team is full')
 
-  const committedMode = side === 'A' ? match.joinModeA : match.joinModeB
-  const committedPresetId = side === 'A' ? match.presetIdA : match.presetIdB
+  const committedMode =
+    (side === 'A' ? match.joinModeA : match.joinModeB) ?? null
+  const committedPresetId =
+    (side === 'A' ? match.presetIdA : match.presetIdB) ?? null
 
   if (committedMode === null) {
     if (mode === 'preset') {
@@ -205,23 +207,27 @@ export async function joinMatch(
     throw new Error('this team is using a different squad preset')
   }
 
+  let assignedLine = line
   if (mode === 'preset') {
     const activePresetId = presetId ?? committedPresetId
     if (!activePresetId) throw new Error('preset is required for preset mode')
     const slots = SQUAD_PRESETS[activePresetId].slice(0, match.playerCap)
-    if (!canClaimPresetSlot(teammates, slots, line))
-      throw new Error(`${line} slot is already taken in this preset`)
-  } else if (match.squadRule === 'capped' && !canJoinLine(teammates, line)) {
+    const openLine = [...new Set(slots)].find(l =>
+      canClaimPresetSlot(teammates, slots, l),
+    )
+    if (!openLine) throw new Error('this preset is full for your team')
+    assignedLine = openLine
+  } else if (match.squadRule !== 'custom' && !canJoinLine(teammates, line)) {
     throw new Error(`${line} is full for this team (max 2)`)
   }
 
   const spawn = randSpawn(side)
-  const maxHull = maxHullFor(line)
+  const maxHull = maxHullFor(assignedLine)
   const player: PlayerState = {
     userId,
     username,
     snoovatar: snoovatar ?? null,
-    line,
+    line: assignedLine,
     x: spawn.x,
     y: spawn.y,
     rotation: 0,

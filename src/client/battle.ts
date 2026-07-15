@@ -656,11 +656,20 @@ async function joinBattle(
 
 function renderJoinChoice(match: Match): string {
   const joinMode = mySide === 'A' ? match.joinModeA : match.joinModeB
+  const presetId = mySide === 'A' ? match.presetIdA : match.presetIdB
   if (joinMode === 'individual') {
     return `<div class="ship-picker">${shipPickerHtml()}</div>`
   }
-  if (joinMode === 'preset') {
-    return `<div class="ship-picker">${presetPickerHtml(match.playerCap)}</div>`
+  if (joinMode === 'preset' && presetId) {
+    return `
+      <p>Your team committed to a squad preset:</p>
+      <div class="ship-picker">
+        <button class="preset-pick" data-preset="${presetId}">
+          <b>${PRESET_LABEL[presetId]}</b><br>
+          <small>${presetSlotSummary(presetId, match.playerCap)}</small>
+        </button>
+      </div>
+    `
   }
   return `
     <p>Pick your own ship, or commit your team to a squad preset:</p>
