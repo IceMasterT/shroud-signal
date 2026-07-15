@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import {test} from 'node:test'
-import {abilityReady, canJoinLine, computeDamage, maxHullFor} from './abilities.ts'
+import {
+  abilityReady,
+  canJoinLine,
+  computeDamage,
+  maxHullFor,
+} from './abilities.ts'
 
 test('canJoinLine allows up to 2 of the same line', () => {
   assert.equal(canJoinLine([], 'fighter'), true)
