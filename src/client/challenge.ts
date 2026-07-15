@@ -67,6 +67,12 @@ async function runSetup(): Promise<void> {
         label: 'Warm-up minutes (1-5)',
         defaultValue: 2,
       },
+      {
+        type: 'boolean',
+        name: 'customSquadRule',
+        label: 'Custom squad rule (no 2-per-line cap)',
+        defaultValue: false,
+      },
     ],
   })
   if (result.action !== 'SUBMITTED') {
@@ -82,6 +88,7 @@ async function runSetup(): Promise<void> {
     targetSubredditName: String(result.values.targetSubredditName ?? ''),
     playerCap: Number(result.values.playerCap ?? 5),
     warmupMinutes: Number(result.values.warmupMinutes ?? 2),
+    squadRule: result.values.customSquadRule ? 'custom' : 'capped',
   })
   if (isErrorRsp(rsp)) {
     render(
@@ -112,6 +119,8 @@ function renderChallenge(
 ): void {
   const cap = challenge.playerCap
   const warmup = challenge.warmupMinutes
+  const ruleLabel = (rule: 'capped' | 'custom') =>
+    rule === 'custom' ? 'custom (no line cap)' : 'capped at 2 per line'
 
   if (challenge.status === 'declined') {
     render(
@@ -131,7 +140,7 @@ function renderChallenge(
     render(`
       <div class="panel">
         <h1>Battle accepted!</h1>
-        <p>r/${escapeHtml(challenge.challengerSubredditName)} vs r/${escapeHtml(challenge.targetSubredditName)}. <span class="stat">${cap}</span> per team, <span class="stat">${warmup}</span> min warm-up.</p>
+        <p>r/${escapeHtml(challenge.challengerSubredditName)} vs r/${escapeHtml(challenge.targetSubredditName)}. <span class="stat">${cap}</span> per team, <span class="stat">${warmup}</span> min warm-up, squad rule <span class="stat">${ruleLabel(challenge.squadRule)}</span>.</p>
         ${url ? `<a class="enter" href="${escapeHtml(url)}"><button>Enter your arena</button></a>` : ''}
       </div>
     `)
@@ -144,7 +153,7 @@ function renderChallenge(
         <div class="panel">
           <h1>Incoming challenge</h1>
           <p>r/${escapeHtml(challenge.challengerSubredditName)} wants to fight r/${escapeHtml(challenge.targetSubredditName)}: Last One Standing.</p>
-          <p><span class="stat">${cap}</span> players per team, <span class="stat">${warmup}</span> min warm-up.</p>
+          <p><span class="stat">${cap}</span> players per team, <span class="stat">${warmup}</span> min warm-up, squad rule <span class="stat">${ruleLabel(challenge.squadRule)}</span>.</p>
           <div class="row">
             <button id="accept">Accept</button>
             <button id="counter" class="secondary">Counter</button>
@@ -166,7 +175,7 @@ function renderChallenge(
         <div class="panel">
           <h1>Challenge sent</h1>
           <p>Waiting for r/${escapeHtml(challenge.targetSubredditName)} to respond…</p>
-          <p><span class="stat">${cap}</span> per team, <span class="stat">${warmup}</span> min warm-up.</p>
+          <p><span class="stat">${cap}</span> per team, <span class="stat">${warmup}</span> min warm-up, squad rule <span class="stat">${ruleLabel(challenge.squadRule)}</span>.</p>
           <button id="decline" class="secondary">Cancel challenge</button>
         </div>
       `)
@@ -180,11 +189,12 @@ function renderChallenge(
   if (challenge.status === 'countered') {
     const counterCap = challenge.counterPlayerCap ?? cap
     const counterWarmup = challenge.counterWarmupMinutes ?? warmup
+    const counterRule = challenge.counterSquadRule ?? challenge.squadRule
     if (role === 'challenger') {
       render(`
         <div class="panel">
           <h1>Counter-offer</h1>
-          <p>r/${escapeHtml(challenge.targetSubredditName)} countered: <span class="stat">${counterCap}</span> per team, <span class="stat">${counterWarmup}</span> min warm-up.</p>
+          <p>r/${escapeHtml(challenge.targetSubredditName)} countered: <span class="stat">${counterCap}</span> per team, <span class="stat">${counterWarmup}</span> min warm-up, squad rule <span class="stat">${ruleLabel(counterRule)}</span>.</p>
           <div class="row">
             <button id="accept">Accept counter</button>
             <button id="decline" class="secondary">Decline</button>
@@ -248,6 +258,12 @@ async function counter(): Promise<void> {
         label: 'Warm-up minutes (1-5)',
         defaultValue: 2,
       },
+      {
+        type: 'boolean',
+        name: 'customSquadRule',
+        label: 'Custom squad rule (no 2-per-line cap)',
+        defaultValue: false,
+      },
     ],
   })
   if (result.action !== 'SUBMITTED') {
@@ -260,6 +276,7 @@ async function counter(): Promise<void> {
     action: 'counter',
     playerCap: Number(result.values.playerCap ?? 5),
     warmupMinutes: Number(result.values.warmupMinutes ?? 2),
+    squadRule: result.values.customSquadRule ? 'custom' : 'capped',
   })
   if (isErrorRsp(rsp)) {
     render(
