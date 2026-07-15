@@ -470,18 +470,21 @@ class BattleScene extends Phaser.Scene {
   update(_time: number, deltaMs: number): void {
     if (!this.ship || !this.self || !this.keys || this.selfEliminated) return
     const dt = Math.min(deltaMs / 1000, 0.05)
+    const spd = this.self.line ? SHIP_STATS[this.self.line].speedMul : 1
 
-    if (this.keys.left.isDown) this.ship.rotation -= TURN_SPEED * dt
-    if (this.keys.right.isDown) this.ship.rotation += TURN_SPEED * dt
+    if (this.keys.left.isDown) this.ship.rotation -= TURN_SPEED * spd * dt
+    if (this.keys.right.isDown) this.ship.rotation += TURN_SPEED * spd * dt
     if (this.keys.up.isDown) {
-      this.velX += Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * dt
-      this.velY += Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * dt
+      this.velX +=
+        Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * spd * dt
+      this.velY +=
+        Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * spd * dt
     }
     if (this.keys.down.isDown) {
       this.velX -=
-        Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * 0.5 * dt
+        Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * spd * 0.5 * dt
       this.velY -=
-        Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * 0.5 * dt
+        Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * spd * 0.5 * dt
     }
 
     const nowMs = performance.now()
@@ -510,8 +513,8 @@ class BattleScene extends Phaser.Scene {
     }
 
     const speed = Math.hypot(this.velX, this.velY)
-    if (speed > MAX_SPEED) {
-      const s = MAX_SPEED / speed
+    if (speed > MAX_SPEED * spd) {
+      const s = (MAX_SPEED * spd) / speed
       this.velX *= s
       this.velY *= s
     }
