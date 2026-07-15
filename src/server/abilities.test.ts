@@ -5,6 +5,7 @@ import {
   canJoinLine,
   computeDamage,
   maxHullFor,
+  mineTriggeredBy,
   nearestAlly,
 } from './abilities.ts'
 
@@ -72,4 +73,24 @@ test('nearestAlly returns undefined when nobody is in range', () => {
   const healer = {userId: 'me', x: 0, y: 0, line: 'tender' as const}
   const far = {userId: 'far', x: 1000, y: 0, line: 'fighter' as const}
   assert.equal(nearestAlly([far], healer, 300), undefined)
+})
+
+test('mineTriggeredBy ignores mines placed by your own team', () => {
+  const mines = [{mineId: 'm1', ownerId: 'x', team: 'A' as const, x: 0, y: 0}]
+  assert.equal(mineTriggeredBy(mines, {team: 'A', x: 0, y: 0}), undefined)
+})
+
+test('mineTriggeredBy detonates when an enemy is within blast radius', () => {
+  const mines = [
+    {mineId: 'm1', ownerId: 'x', team: 'A' as const, x: 100, y: 100},
+  ]
+  assert.equal(
+    mineTriggeredBy(mines, {team: 'B', x: 140, y: 100})?.mineId,
+    'm1',
+  )
+})
+
+test('mineTriggeredBy ignores mines out of blast radius', () => {
+  const mines = [{mineId: 'm1', ownerId: 'x', team: 'A' as const, x: 0, y: 0}]
+  assert.equal(mineTriggeredBy(mines, {team: 'B', x: 500, y: 500}), undefined)
 })

@@ -1,4 +1,4 @@
-import type {PlayerState, ShipLine} from '../shared/api.ts'
+import type {PlayerState, ShipLine, Team} from '../shared/api.ts'
 import {
   ABILITY_COOLDOWN_MS,
   BULWARK_DAMAGE_MUL,
@@ -70,4 +70,27 @@ export function nearestAlly(
     if (!closest || d < closest.d) closest = {p, d}
   }
   return closest?.p
+}
+
+export type Mine = {
+  mineId: string
+  ownerId: string
+  team: Team
+  x: number
+  y: number
+}
+
+const MINE_BLAST_RADIUS = 70
+
+/** The first enemy mine within blast radius of a mover's new position, if any. */
+export function mineTriggeredBy(
+  mines: Mine[],
+  mover: {team: Team | null; x: number; y: number},
+): Mine | undefined {
+  for (const m of mines) {
+    if (m.team === mover.team) continue
+    const distance = Math.hypot(mover.x - m.x, mover.y - m.y)
+    if (distance <= MINE_BLAST_RADIUS) return m
+  }
+  return undefined
 }
