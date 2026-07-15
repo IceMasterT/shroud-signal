@@ -11,6 +11,8 @@ import {
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   matchChannel,
+  SHIP_LINES,
+  SHIP_STATS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
 } from '../shared/api.ts'
@@ -36,6 +38,27 @@ const SHIP_LABEL: Record<PlayerState['line'], string> = {
   transport: 'TRANSPORT',
   pathfinder: 'PATHFINDER',
   tender: 'TENDER',
+}
+
+const ABILITY_BLURB: Record<PlayerState['line'], string> = {
+  fighter: 'Overcharge: +50% weapon damage for 5s',
+  miner: 'Deploy Mine: plants a proximity mine',
+  transport: 'Bulwark: -50% damage taken for 4s',
+  pathfinder: 'Radar Ping: reveals enemy hull for 6s',
+  tender: 'Repair Beam: heals your nearest ally',
+}
+
+function shipPickerHtml(): string {
+  return SHIP_LINES.map(
+    line => `
+      <button class="ship-pick" data-line="${line}">
+        <b>${SHIP_LABEL[line]}</b><br>
+        <span class="stat">SPD ${Math.round(SHIP_STATS[line].speedMul * 100)}%</span>
+        <span class="stat">HULL ${Math.round(SHIP_STATS[line].hullMul * 100)}%</span>
+        <span class="stat">DMG ${Math.round(SHIP_STATS[line].dmgMul * 100)}%</span><br>
+        <small>${ABILITY_BLURB[line]}</small>
+      </button>`,
+  ).join('')
 }
 
 function getKind(): PostKind | undefined {
@@ -465,8 +488,8 @@ function killsScoreboard(
   return `<p><b>TOP KILLS</b><br>${rows}</p>`
 }
 
-async function joinBattle(): Promise<void> {
-  const rsp = await fetchMatchJoin()
+async function joinBattle(line: PlayerState['line']): Promise<void> {
+  const rsp = await fetchMatchJoin({line})
   if (isErrorRsp(rsp)) {
     showOverlay(
       `<div class="panel"><p class="error">${escapeHtml(rsp.error)}</p></div>`,
@@ -495,12 +518,17 @@ function renderMatch(
           <div class="roster">TEAM A<br>${rosterList(rosterA, match.playerCap)}</div>
           <div class="roster">TEAM B<br>${rosterList(rosterB, match.playerCap)}</div>
         </div>
-        ${self ? '<p>You are in. Waiting for the round to start…</p>' : '<button id="join">Join battle</button>'}
+        ${self ? '<p>You are in. Waiting for the round to start…</p>' : `<div class="ship-picker">${shipPickerHtml()}</div>`}
       </div>
     `)
-    document
-      .getElementById('join')
-      ?.addEventListener('click', () => void joinBattle())
+    for (const btn of document.querySelectorAll<HTMLButtonElement>(
+      '.ship-pick',
+    )) {
+      btn.addEventListener('click', () => {
+        const line = btn.dataset.line as PlayerState['line']
+        void joinBattle(line)
+      })
+    }
     return
   }
 
