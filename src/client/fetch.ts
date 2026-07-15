@@ -13,6 +13,8 @@ import {
   type JoinMatchReq,
   type JoinMatchRsp,
   type LeaderboardRsp,
+  type MatchAbilityReq,
+  type MatchAbilityRsp,
   type MatchStateRsp,
   type MoveReq,
   type MoveRsp,
@@ -208,6 +210,13 @@ export function fetchMatchJoin(
   req: JoinMatchReq,
 ): Promise<JoinMatchRsp | ErrorRsp> {
   return postJsonOrError<JoinMatchReq, JoinMatchRsp>(Endpoint.MatchJoin, req)
+}
+
+export function fetchMatchAbility(): Promise<MatchAbilityRsp | ErrorRsp> {
+  return postJsonOrError<MatchAbilityReq, MatchAbilityRsp>(
+    Endpoint.MatchAbility,
+    {},
+  )
 }
 
 export function fetchMatchState(): Promise<MatchStateRsp | ErrorRsp> {
