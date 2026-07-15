@@ -8,6 +8,7 @@ import type {
   Team,
 } from '../shared/api.ts'
 import {
+  ABILITY_COOLDOWN_MS,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   matchChannel,
@@ -18,6 +19,7 @@ import {
 } from '../shared/api.ts'
 import {
   fetchFire,
+  fetchMatchAbility,
   fetchMatchJoin,
   fetchMatchState,
   fetchMove,
@@ -99,9 +101,11 @@ class BattleScene extends Phaser.Scene {
     right: Phaser.Input.Keyboard.Key
     laser: Phaser.Input.Keyboard.Key
     torpedo: Phaser.Input.Keyboard.Key
+    ability: Phaser.Input.Keyboard.Key
   } | null = null
   lastLaserFiredAt = 0
   lastTorpedoFiredAt = 0
+  lastAbilityFiredAt = 0
   others = new Map<string, RemoteShip>()
   hudTop!: Phaser.GameObjects.Text
   hudBottom!: Phaser.GameObjects.Text
@@ -147,6 +151,7 @@ class BattleScene extends Phaser.Scene {
       right: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       laser: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
       torpedo: kb.addKey(Phaser.Input.Keyboard.KeyCodes.E),
+      ability: kb.addKey(Phaser.Input.Keyboard.KeyCodes.R),
     }
 
     this.hudTop = this.add
@@ -166,6 +171,15 @@ class BattleScene extends Phaser.Scene {
         color: '#88bbaa',
       })
       .setOrigin(0, 1)
+      .setScrollFactor(0)
+      .setDepth(50)
+    this.add
+      .text(W - 12, H - 12, '[SPACE] LASER  ·  [E] MISSILE  ·  [R] ABILITY', {
+        fontFamily: 'monospace',
+        fontSize: '10px',
+        color: '#446688',
+      })
+      .setOrigin(1, 1)
       .setScrollFactor(0)
       .setDepth(50)
   }
@@ -357,6 +371,21 @@ class BattleScene extends Phaser.Scene {
         this.self.kills = msg.kills
         this.updateHud()
       }
+    } else if (msg.type === 'ability') {
+      const r = this.others.get(msg.userId)
+      if (r) {
+        const pulse = this.add
+          .circle(r.container.x, r.container.y, 26, 0xfff2a8, 0)
+          .setStrokeStyle(2, 0xfff2a8, 0.9)
+          .setDepth(19)
+        this.tweens.add({
+          targets: pulse,
+          radius: 40,
+          alpha: 0,
+          duration: 300,
+          onComplete: () => pulse.destroy(),
+        })
+      }
     }
   }
 
@@ -392,6 +421,13 @@ class BattleScene extends Phaser.Scene {
     ) {
       this.lastTorpedoFiredAt = nowMs
       void fetchFire({mode: 'torpedo'})
+    }
+    if (
+      this.keys.ability.isDown &&
+      nowMs - this.lastAbilityFiredAt > ABILITY_COOLDOWN_MS[this.self.line]
+    ) {
+      this.lastAbilityFiredAt = nowMs
+      void fetchMatchAbility()
     }
 
     const speed = Math.hypot(this.velX, this.velY)
