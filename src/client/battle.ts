@@ -443,6 +443,9 @@ class BattleScene extends Phaser.Scene {
       if (msg.targetUserId === this.self?.userId && this.self) {
         this.self.hull = msg.hull
         this.updateHud()
+      } else if (msg.targetUserId !== this.self?.userId) {
+        const r = this.others.get(msg.targetUserId)
+        if (r) r.hull = msg.hull
       }
       const target =
         msg.targetUserId === this.self?.userId
