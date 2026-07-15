@@ -47,6 +47,59 @@ export const SHIP_STATS: Record<ShipLine, ShipStats> = {
   tender: {speedMul: 0.9, hullMul: 1.1, dmgMul: 0.8},
 }
 
+/** Curated ship-line slot lists a team can commit to instead of free-picking. Exempt from both the 2-per-line cap and the custom squad rule. */
+export type PresetId = 'balanced' | 'aggro' | 'turtle' | 'recon'
+export const SQUAD_PRESETS: Record<PresetId, ShipLine[]> = {
+  balanced: [
+    'fighter',
+    'tender',
+    'transport',
+    'pathfinder',
+    'miner',
+    'fighter',
+    'tender',
+    'transport',
+    'pathfinder',
+    'miner',
+  ],
+  aggro: [
+    'fighter',
+    'fighter',
+    'pathfinder',
+    'fighter',
+    'pathfinder',
+    'fighter',
+    'fighter',
+    'pathfinder',
+    'fighter',
+    'pathfinder',
+  ],
+  turtle: [
+    'transport',
+    'transport',
+    'tender',
+    'transport',
+    'tender',
+    'transport',
+    'transport',
+    'tender',
+    'transport',
+    'tender',
+  ],
+  recon: [
+    'pathfinder',
+    'pathfinder',
+    'miner',
+    'tender',
+    'pathfinder',
+    'pathfinder',
+    'pathfinder',
+    'miner',
+    'tender',
+    'pathfinder',
+  ],
+}
+
 /** Per-line active-ability tuning, battle arenas only. */
 export const ABILITY_COOLDOWN_MS: Record<ShipLine, number> = {
   fighter: 20000,
@@ -224,6 +277,10 @@ export type Match = {
   playerCap: number
   warmupMinutes: number
   squadRule: SquadRule
+  joinModeA: 'individual' | 'preset' | null
+  joinModeB: 'individual' | 'preset' | null
+  presetIdA: PresetId | null
+  presetIdB: PresetId | null
   status: MatchStatus
   round: number
   roundWinsA: number
@@ -244,7 +301,11 @@ export type MatchStateRsp = {
   rosterA: PlayerState[]
   rosterB: PlayerState[]
 }
-export type JoinMatchReq = {line: ShipLine}
+export type JoinMatchReq = {
+  line: ShipLine
+  mode: 'individual' | 'preset'
+  presetId: PresetId | null
+}
 export type JoinMatchRsp = {ok: true}
 export type MatchAbilityReq = Record<string, never>
 export type MatchAbilityRsp = {ok: true}
