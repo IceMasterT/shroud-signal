@@ -8,6 +8,8 @@ No login flow, no accounts, no external database: player identity, position, com
 
 A mod can also run **"Challenge a Subreddit"** to pit their community against another one: set a player cap per team and a warm-up window, the other subreddit accepts or counters, and once accepted both subreddits get a synced arena post for a best-of-3 Last One Standing series. Eliminated pilots sit out the rest of that round; if a round times out with survivors on both sides it's a tie, and cumulative survival time breaks a tied series.
 
+In battle arenas, the 5 ship lines are a real choice, not cosmetic: each has its own speed/hull/damage profile and a unique `R`-key ability (Fighter overcharges its weapon, Miner drops proximity mines, Transport shields itself, Pathfinder reveals enemy hull, Tender heals its nearest ally), and a team can't stack more than 2 of the same line, so squad composition is an actual decision.
+
 ## About this project
 
 Shroud Signal is a spin-off of [Mentaverse](https://mentagame.com), another game I've been developing, also built in Phaser. Same developer, same universe, just me borrowing my own assets for a hackathon. Nothing here is lifted from anyone else's work.
