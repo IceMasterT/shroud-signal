@@ -10,6 +10,7 @@ import {
   type IncCounterReq,
   type IncCounterRsp,
   type InitRsp,
+  type JoinMatchReq,
   type JoinMatchRsp,
   type LeaderboardRsp,
   type MatchStateRsp,
@@ -203,11 +204,10 @@ export function fetchChallengeState(): Promise<ChallengeStateRsp | ErrorRsp> {
   return getJsonOrError<ChallengeStateRsp>(Endpoint.ChallengeState)
 }
 
-export function fetchMatchJoin(): Promise<JoinMatchRsp | ErrorRsp> {
-  return postJsonOrError<Record<string, never>, JoinMatchRsp>(
-    Endpoint.MatchJoin,
-    {},
-  )
+export function fetchMatchJoin(
+  req: JoinMatchReq,
+): Promise<JoinMatchRsp | ErrorRsp> {
+  return postJsonOrError<JoinMatchReq, JoinMatchRsp>(Endpoint.MatchJoin, req)
 }
 
 export function fetchMatchState(): Promise<MatchStateRsp | ErrorRsp> {
