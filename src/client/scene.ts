@@ -15,6 +15,7 @@ import {
   fetchMove,
   fetchScore,
 } from './fetch.ts'
+import {TouchButton, VirtualJoystick} from './touchControls.ts'
 
 const WORLD_HALF = 900
 const THRUST = 340
@@ -54,6 +55,9 @@ export class SectorScene extends Phaser.Scene {
   }
   private lastLaserFiredAt = 0
   private lastTorpedoFiredAt = 0
+  private joystick: VirtualJoystick | null = null
+  private touchLaser: TouchButton | null = null
+  private touchMissile: TouchButton | null = null
   private others = new Map<string, RemoteShip>()
   private hudName!: Phaser.GameObjects.Text
   private hudScore!: Phaser.GameObjects.Text
@@ -157,6 +161,19 @@ export class SectorScene extends Phaser.Scene {
       .setOrigin(1, 1)
       .setScrollFactor(0)
       .setDepth(50)
+
+    this.joystick = new VirtualJoystick(this, 110, H - 110, 70)
+    this.touchMissile = new TouchButton(this, W - 70, H - 70, 34, 'MSL')
+    this.touchLaser = new TouchButton(this, W - 160, H - 70, 34, 'LSR')
+    new TouchButton(
+      this,
+      W - 115,
+      H - 160,
+      34,
+      'LDR',
+      () => void this.toggleLeaderboard(),
+    )
+
     this.leaderboardPanel = this.add
       .text(W / 2, H / 2, '', {
         fontFamily: 'monospace',
@@ -428,28 +445,35 @@ export class SectorScene extends Phaser.Scene {
     if (!this.ship || !this.player) return
     const dt = Math.min(deltaMs / 1000, 0.05)
 
-    if (this.keys.left.isDown) this.ship.rotation -= TURN_SPEED * dt
-    if (this.keys.right.isDown) this.ship.rotation += TURN_SPEED * dt
-    if (this.keys.up.isDown) {
-      this.velX += Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * dt
-      this.velY += Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * dt
-    }
-    if (this.keys.down.isDown) {
-      this.velX -=
-        Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * 0.5 * dt
-      this.velY -=
-        Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * 0.5 * dt
+    if (this.joystick?.active) {
+      this.ship.rotation = this.joystick.angle
+      const thrust = THRUST * this.joystick.magnitude
+      this.velX += Math.cos(this.ship.rotation - Math.PI / 2) * thrust * dt
+      this.velY += Math.sin(this.ship.rotation - Math.PI / 2) * thrust * dt
+    } else {
+      if (this.keys.left.isDown) this.ship.rotation -= TURN_SPEED * dt
+      if (this.keys.right.isDown) this.ship.rotation += TURN_SPEED * dt
+      if (this.keys.up.isDown) {
+        this.velX += Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * dt
+        this.velY += Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * dt
+      }
+      if (this.keys.down.isDown) {
+        this.velX -=
+          Math.cos(this.ship.rotation - Math.PI / 2) * THRUST * 0.5 * dt
+        this.velY -=
+          Math.sin(this.ship.rotation - Math.PI / 2) * THRUST * 0.5 * dt
+      }
     }
 
     const nowMs = performance.now()
-    if (this.keys.laser.isDown) {
+    if (this.keys.laser.isDown || this.touchLaser?.isDown) {
       if (nowMs - this.lastLaserFiredAt > LASER_COOLDOWN_MS) {
         this.lastLaserFiredAt = nowMs
         this.fireLaser(this.ship.x, this.ship.y, this.ship.rotation)
         void fetchFire({mode: 'laser'})
       }
     }
-    if (this.keys.torpedo.isDown) {
+    if (this.keys.torpedo.isDown || this.touchMissile?.isDown) {
       if (nowMs - this.lastTorpedoFiredAt > TORPEDO_COOLDOWN_MS) {
         this.lastTorpedoFiredAt = nowMs
         void fetchFire({mode: 'torpedo'})
@@ -526,6 +550,7 @@ export function bootGame(): void {
       width: window.innerWidth,
       height: window.innerHeight,
     },
+    input: {activePointers: 2},
     scene: [SectorScene],
   })
 }
