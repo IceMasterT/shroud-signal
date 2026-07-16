@@ -31,9 +31,13 @@ export const SHIP_LINES: readonly ShipLine[] = [
  */
 export const LASER_RANGE = 420
 export const LASER_COOLDOWN_MS = 350
+/** Free-play sectors only — every pilot there has plain laser + torpedo. Battle arenas use MISSILE_SPEED/MISSILE_COOLDOWN_MS instead (Fighter's second weapon), tuned independently. */
 export const TORPEDO_RANGE = 640
 export const TORPEDO_SPEED = 600 // world units/sec
-export const TORPEDO_COOLDOWN_MS = 1200
+export const TORPEDO_COOLDOWN_MS = 900
+/** Fighter's missile in battle arenas — deliberately slower and heavier-cooldown than free-play's torpedo, since Fighter's laser is already its fast/primary weapon. */
+export const MISSILE_SPEED = 420 // world units/sec
+export const MISSILE_COOLDOWN_MS = 1800
 export const AUTOCANNON_RANGE = 400
 export const AUTOCANNON_COOLDOWN_MS = 200
 export const BURST_RANGE = 340

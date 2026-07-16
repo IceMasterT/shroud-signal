@@ -21,6 +21,8 @@ import {
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   MATCH_ROUNDS_TO_WIN,
+  MISSILE_COOLDOWN_MS,
+  MISSILE_SPEED,
   matchChannel,
   OVERCHARGE_DURATION_MS,
   PLASMA_COOLDOWN_MS,
@@ -31,9 +33,7 @@ import {
   SQUAD_PRESETS,
   TENDER_HEAL_AMOUNT,
   TENDER_HEAL_RANGE,
-  TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
-  TORPEDO_SPEED,
 } from '../shared/api.ts'
 import {
   abilityReady,
@@ -385,7 +385,7 @@ export async function fireWeaponInMatch(
   const now = Date.now()
   const isPrimary = mode === firstWeapon
   const cooldownMs =
-    mode === 'torpedo' ? TORPEDO_COOLDOWN_MS : HITSCAN_TUNING[mode].cooldownMs
+    mode === 'torpedo' ? MISSILE_COOLDOWN_MS : HITSCAN_TUNING[mode].cooldownMs
   if (isPrimary) {
     if (now - (shooter.lastLaserAt ?? 0) < cooldownMs) return
     shooter.lastLaserAt = now
@@ -425,7 +425,7 @@ export async function fireWeaponInMatch(
     }
     if (closestDist !== undefined) travelDistance = closestDist
 
-    const travelMs = (travelDistance / TORPEDO_SPEED) * 1000
+    const travelMs = (travelDistance / MISSILE_SPEED) * 1000
     const impactX = x + dirX * travelDistance
     const impactY = y + dirY * travelDistance
     const torpedoId = `${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`

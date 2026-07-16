@@ -29,6 +29,8 @@ import {
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   MATCH_ROUNDS_TO_WIN,
+  MISSILE_COOLDOWN_MS,
+  MISSILE_SPEED,
   OVERCHARGE_DURATION_MS,
   PLASMA_COOLDOWN_MS,
   PLASMA_RANGE,
@@ -40,9 +42,7 @@ import {
   SQUAD_PRESETS,
   TENDER_HEAL_AMOUNT,
   TENDER_HEAL_RANGE,
-  TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
-  TORPEDO_SPEED,
   type WeaponMode,
 } from '../src/shared/api.ts'
 
@@ -319,14 +319,14 @@ function simulateRound(players: SimPlayer[]): RoundResult {
           if (
             distance <= TORPEDO_RANGE &&
             angle <= TORPEDO_AIM_HALF_ANGLE &&
-            now - lastAt >= TORPEDO_COOLDOWN_MS
+            now - lastAt >= MISSILE_COOLDOWN_MS
           ) {
             if (isPrimary) p.lastLaserAt = now
             else p.lastTorpedoAt = now
             // Stop at the target's actual distance, not always full
             // TORPEDO_RANGE — matches the server fix (overshooting close
             // targets was the bug).
-            const travelMs = (distance / TORPEDO_SPEED) * 1000
+            const travelMs = (distance / MISSILE_SPEED) * 1000
             pendingTorpedoes.push({
               firedAtTick: tick,
               resolveAtTick: tick + Math.round(travelMs / TICK_MS),
@@ -747,10 +747,54 @@ for (let i = 0; i < N_CUSTOM; i++) {
 printStats('Phase 5: custom unrestricted compositions', customStats)
 
 console.log(
+  '\n=== Phase 6: Tender paired with allies (2x Tender + 8x line X) vs random balanced mix ===',
+)
+console.log(
+  "Compare against Phase 2's solo 10x-stack win rate for the same line — the delta is what Tender's heal is actually worth with real allies to support.",
+)
+const DUO_RUNS = 30
+for (const line of SHIP_LINES) {
+  if (line === 'tender') continue
+  const comp: Line[] = [
+    ...(Array(2).fill('tender') as Line[]),
+    ...(Array(8).fill(line) as Line[]),
+  ]
+  let wins = 0
+  let tenderKills = 0
+  let tenderDeaths = 0
+  let tenderDmgTaken = 0
+  let partnerKills = 0
+  let partnerDeaths = 0
+  for (let i = 0; i < DUO_RUNS; i++) {
+    const compB = randomComposition(PLAYER_CAP, true)
+    const result = simulateMatch(comp, compB)
+    if (result.winner === 'A') wins++
+    for (const p of result.players.slice(0, PLAYER_CAP)) {
+      if (p.line === 'tender') {
+        tenderKills += p.kills
+        if (!p.alive) tenderDeaths++
+        tenderDmgTaken += p.damageTaken
+      } else {
+        partnerKills += p.kills
+        if (!p.alive) partnerDeaths++
+      }
+    }
+  }
+  const soloWinPct = (
+    (stackStats[line].wins / stackStats[line].matches) *
+    100
+  ).toFixed(1)
+  console.log(
+    `2x Tender + 8x ${line.padEnd(10)} won ${wins}/${DUO_RUNS} (${((wins / DUO_RUNS) * 100).toFixed(1)}%) vs random mix` +
+      ` — solo 10x ${line} stack won ${soloWinPct}% (Phase 2) — ${partnerKills} partner kills, ${partnerDeaths} partner deaths, ${tenderKills} Tender kills, ${tenderDeaths} Tender deaths, ${(tenderDmgTaken / (DUO_RUNS * 2)).toFixed(0)} dmg taken/Tender/match`,
+  )
+}
+
+console.log(
   `\n${anomalies.length} total state anomalies across all phases, ${errors} matches threw.`,
 )
 if (anomalies.length) console.log(anomalies.slice(0, 20).join('\n'))
 
 console.log(
-  `\nTotal matches simulated: ${N_RANDOM + SHIP_LINES.length * STACK_RUNS_PER_LINE + Object.keys(mirrorStats).length * PAIR_RUNS + Object.keys(SQUAD_PRESETS).length * PRESET_RUNS + N_CUSTOM}`,
+  `\nTotal matches simulated: ${N_RANDOM + SHIP_LINES.length * STACK_RUNS_PER_LINE + Object.keys(mirrorStats).length * PAIR_RUNS + Object.keys(SQUAD_PRESETS).length * PRESET_RUNS + N_CUSTOM + (SHIP_LINES.length - 1) * DUO_RUNS}`,
 )

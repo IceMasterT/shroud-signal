@@ -19,6 +19,8 @@ import {
   FLAK_RANGE,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
+  MISSILE_COOLDOWN_MS,
+  MISSILE_SPEED,
   matchChannel,
   PLASMA_COOLDOWN_MS,
   PLASMA_RANGE,
@@ -27,9 +29,7 @@ import {
   SHIP_STATS,
   SHIP_WEAPONS,
   SQUAD_PRESETS,
-  TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
-  TORPEDO_SPEED,
 } from '../shared/api.ts'
 import {
   fetchFire,
@@ -662,7 +662,7 @@ class BattleScene extends Phaser.Scene {
     if (primaryMode && (spacePressed || (!secondaryMode && ePressed))) {
       const cooldownMs =
         primaryMode === 'torpedo'
-          ? TORPEDO_COOLDOWN_MS
+          ? MISSILE_COOLDOWN_MS
           : HITSCAN_VISUAL[primaryMode].cooldownMs
       if (nowMs - this.lastLaserFiredAt > cooldownMs) {
         this.lastLaserFiredAt = nowMs
@@ -671,7 +671,7 @@ class BattleScene extends Phaser.Scene {
           this.ship.x,
           this.ship.y,
           this.ship.rotation,
-          (TORPEDO_RANGE / TORPEDO_SPEED) * 1000,
+          (TORPEDO_RANGE / MISSILE_SPEED) * 1000,
         )
         void fetchFire({mode: primaryMode})
       }
@@ -679,7 +679,7 @@ class BattleScene extends Phaser.Scene {
     if (secondaryMode && ePressed) {
       const cooldownMs =
         secondaryMode === 'torpedo'
-          ? TORPEDO_COOLDOWN_MS
+          ? MISSILE_COOLDOWN_MS
           : HITSCAN_VISUAL[secondaryMode].cooldownMs
       if (nowMs - this.lastTorpedoFiredAt > cooldownMs) {
         this.lastTorpedoFiredAt = nowMs
@@ -688,7 +688,7 @@ class BattleScene extends Phaser.Scene {
           this.ship.x,
           this.ship.y,
           this.ship.rotation,
-          (TORPEDO_RANGE / TORPEDO_SPEED) * 1000,
+          (TORPEDO_RANGE / MISSILE_SPEED) * 1000,
         )
         void fetchFire({mode: secondaryMode})
       }
