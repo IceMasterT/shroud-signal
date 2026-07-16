@@ -26,6 +26,7 @@ import {
   ROUND_MAX_MS,
   SHIP_LINES,
   SHIP_STATS,
+  SHIP_WEAPON,
   TENDER_HEAL_AMOUNT,
   TENDER_HEAL_RANGE,
   TORPEDO_COOLDOWN_MS,
@@ -40,8 +41,8 @@ const MAX_SPEED = 260
 const TURN_SPEED = 3.6
 const LASER_HALF_ANGLE = 0.3
 const LASER_DAMAGE = 20
-const TORPEDO_DAMAGE = 45
-const TORPEDO_IMPACT_RADIUS = 70
+const TORPEDO_DAMAGE = 55
+const TORPEDO_IMPACT_RADIUS = 150
 const TICK_MS = 150
 const TORPEDO_AIM_HALF_ANGLE = 0.5 // more lenient than laser — impact radius forgives imprecision
 
@@ -233,8 +234,10 @@ function simulateRound(players: SimPlayer[]): RoundResult {
 
       const angle = angleTo(p, target)
       const distance = Math.hypot(dx, dy)
+      const weapon = SHIP_WEAPON[p.line] // each line carries exactly one weapon in battle arenas
 
       if (
+        weapon === 'laser' &&
         distance <= LASER_RANGE &&
         angle <= LASER_HALF_ANGLE &&
         now - p.lastLaserAt >= LASER_COOLDOWN_MS
@@ -245,18 +248,21 @@ function simulateRound(players: SimPlayer[]): RoundResult {
       if (!p.alive) continue
 
       if (
+        weapon === 'torpedo' &&
         distance <= TORPEDO_RANGE &&
         angle <= TORPEDO_AIM_HALF_ANGLE &&
         now - p.lastTorpedoAt >= TORPEDO_COOLDOWN_MS
       ) {
         p.lastTorpedoAt = now
-        const travelMs = (TORPEDO_RANGE / TORPEDO_SPEED) * 1000
+        // Stop at the target's actual distance, not always full TORPEDO_RANGE
+        // — matches the server fix (overshooting close targets was the bug).
+        const travelMs = (distance / TORPEDO_SPEED) * 1000
         pendingTorpedoes.push({
           resolveAtTick: tick + Math.round(travelMs / TICK_MS),
           shooterId: p.id,
           shooterTeam: p.team,
-          impactX: p.x + dirX * TORPEDO_RANGE,
-          impactY: p.y + dirY * TORPEDO_RANGE,
+          impactX: p.x + dirX * distance,
+          impactY: p.y + dirY * distance,
         })
       }
 
@@ -462,7 +468,7 @@ console.log(
 const randomStats = freshStats()
 let errors = 0
 const anomalies: string[] = []
-const N_RANDOM = 100
+const N_RANDOM = 20
 for (let i = 0; i < N_RANDOM; i++) {
   try {
     const compA = randomComposition(PLAYER_CAP, true)

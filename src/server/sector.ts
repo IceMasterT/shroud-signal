@@ -22,8 +22,9 @@ const LASER_DAMAGE = 20
 const HIT_SCORE = 10
 const KILL_SCORE = 40
 
-const TORPEDO_DAMAGE = 45
-const TORPEDO_IMPACT_RADIUS = 70 // how far off the flight line a target may be and still be caught
+const TORPEDO_DAMAGE = 55
+const TORPEDO_IMPACT_RADIUS = 150 // how far off the flight line a target may be and still be caught
+const TORPEDO_AIM_HALF_ANGLE = 0.4
 
 export function sectorChannel(postId: string): string {
   return `sector:${postId}`
@@ -264,12 +265,13 @@ export async function topPilots(
  * Laser: instant hitscan — the nearest other player within range and within
  * the firing cone takes damage immediately.
  *
- * Torpedo: a genuine travel-time projectile. It always flies the full
- * TORPEDO_RANGE in a straight line; impact is resolved after that travel
- * time elapses (a detached `setTimeout` — safe here since this is a
- * long-lived `http.Server` process, not a per-request cold start), and
- * whoever is near the endpoint *at that later moment* takes the hit — not
- * whoever was aimed at when it launched, so it can be dodged.
+ * Torpedo: a genuine travel-time projectile. It flies in a straight line to
+ * the nearest roughly-aimed-at target's current distance (or TORPEDO_RANGE
+ * if nothing qualifies); impact is resolved after that travel time elapses
+ * (a detached `setTimeout` — safe here since this is a long-lived
+ * `http.Server` process, not a per-request cold start), and whoever is near
+ * the endpoint *at that later moment* takes the hit — not whoever was aimed
+ * at when it launched, so it can still be dodged.
  */
 export async function fireWeapon(
   postId: string,
@@ -295,6 +297,7 @@ export async function fireWeapon(
   const {x, y, rotation} = shooter
   const dirX = Math.cos(rotation - Math.PI / 2)
   const dirY = Math.sin(rotation - Math.PI / 2)
+  const others = await listOtherPlayers(postId, shooterId)
 
   if (mode === 'laser') {
     await broadcast(postId, {
@@ -307,7 +310,6 @@ export async function fireWeapon(
       travelMs: 0,
     })
 
-    const others = await listOtherPlayers(postId, shooterId)
     let closest: {player: PlayerState; distance: number} | undefined
     for (const p of others) {
       const dx = p.x - x
@@ -332,9 +334,28 @@ export async function fireWeapon(
     return
   }
 
-  const travelMs = (TORPEDO_RANGE / TORPEDO_SPEED) * 1000
-  const impactX = x + dirX * TORPEDO_RANGE
-  const impactY = y + dirY * TORPEDO_RANGE
+  // Stop at the nearest roughly-aimed-at target instead of always flying to
+  // TORPEDO_RANGE — otherwise firing at anyone closer than max range
+  // overshoots them entirely. Still resolved at arrival time against
+  // wherever they've moved to by then, so it stays dodgeable.
+  let travelDistance = TORPEDO_RANGE
+  let closestDist: number | undefined
+  for (const p of others) {
+    const dx = p.x - x
+    const dy = p.y - y
+    const distance = Math.hypot(dx, dy)
+    if (distance === 0 || distance > TORPEDO_RANGE) continue
+    const dot = (dx / distance) * dirX + (dy / distance) * dirY
+    const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
+    if (angle > TORPEDO_AIM_HALF_ANGLE) continue
+    if (closestDist === undefined || distance < closestDist)
+      closestDist = distance
+  }
+  if (closestDist !== undefined) travelDistance = closestDist
+
+  const travelMs = (travelDistance / TORPEDO_SPEED) * 1000
+  const impactX = x + dirX * travelDistance
+  const impactY = y + dirY * travelDistance
   await broadcast(postId, {
     type: 'shot',
     userId: shooterId,

@@ -39,8 +39,9 @@ import {
 
 const LASER_HALF_ANGLE = 0.3
 const LASER_DAMAGE = 20
-const TORPEDO_DAMAGE = 45
-const TORPEDO_IMPACT_RADIUS = 70
+const TORPEDO_DAMAGE = 55
+const TORPEDO_IMPACT_RADIUS = 150
+const TORPEDO_AIM_HALF_ANGLE = 0.4
 
 function matchKey(matchId: string): string {
   return `match:${matchId}`
@@ -323,6 +324,7 @@ export async function fireWeaponInMatch(
   const {x, y, rotation, team: shooterTeam} = shooter
   const dirX = Math.cos(rotation - Math.PI / 2)
   const dirY = Math.sin(rotation - Math.PI / 2)
+  const enemies = await enemyRoster(matchId, shooterTeam)
 
   if (mode === 'laser') {
     await broadcastMatch(matchId, {
@@ -335,7 +337,6 @@ export async function fireWeaponInMatch(
       travelMs: 0,
     })
 
-    const enemies = await enemyRoster(matchId, shooterTeam)
     let closest: {player: PlayerState; distance: number} | undefined
     for (const p of enemies) {
       const dx = p.x - x
@@ -353,9 +354,29 @@ export async function fireWeaponInMatch(
     return
   }
 
-  const travelMs = (TORPEDO_RANGE / TORPEDO_SPEED) * 1000
-  const impactX = x + dirX * TORPEDO_RANGE
-  const impactY = y + dirY * TORPEDO_RANGE
+  // A torpedo used to always fly to the full TORPEDO_RANGE in the firing
+  // direction, so firing at anyone closer than that overshot them entirely —
+  // guaranteed miss. Now it stops at the nearest roughly-aimed-at enemy
+  // (a wider cone than laser's, since it isn't meant to be pixel-precise),
+  // falling back to full range only when nothing qualifies (an intentional miss).
+  let travelDistance = TORPEDO_RANGE
+  let closestDist: number | undefined
+  for (const p of enemies) {
+    const dx = p.x - x
+    const dy = p.y - y
+    const distance = Math.hypot(dx, dy)
+    if (distance === 0 || distance > TORPEDO_RANGE) continue
+    const dot = (dx / distance) * dirX + (dy / distance) * dirY
+    const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
+    if (angle > TORPEDO_AIM_HALF_ANGLE) continue
+    if (closestDist === undefined || distance < closestDist)
+      closestDist = distance
+  }
+  if (closestDist !== undefined) travelDistance = closestDist
+
+  const travelMs = (travelDistance / TORPEDO_SPEED) * 1000
+  const impactX = x + dirX * travelDistance
+  const impactY = y + dirY * travelDistance
   await broadcastMatch(matchId, {
     type: 'shot',
     userId: shooterId,

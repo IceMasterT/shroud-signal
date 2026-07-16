@@ -32,8 +32,8 @@ export const SHIP_LINES: readonly ShipLine[] = [
 export const LASER_RANGE = 420
 export const LASER_COOLDOWN_MS = 350
 export const TORPEDO_RANGE = 640
-export const TORPEDO_SPEED = 480 // world units/sec
-export const TORPEDO_COOLDOWN_MS = 1400
+export const TORPEDO_SPEED = 600 // world units/sec
+export const TORPEDO_COOLDOWN_MS = 900
 
 export type WeaponMode = 'laser' | 'torpedo'
 
