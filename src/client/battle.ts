@@ -112,9 +112,9 @@ const HITSCAN_VISUAL: Record<
 
 const PRESET_LABEL: Record<PresetId, string> = {
   balanced: 'Balanced Wing — one of each role, twice over',
-  aggro: 'Aggro Rush — fighters and pathfinders, hit fast',
-  turtle: 'Turtle Wall — transports and tenders, outlast them',
-  recon: 'Recon Strike — pathfinders and miners, control the field',
+  aggro: 'Aggro Rush — fighters and miners, hit fast and often',
+  turtle: 'Turtle Wall — mostly transports, outlast them',
+  recon: 'Recon Strike — miners with pathfinder scouts, control the field',
 }
 
 function presetSlotSummary(presetId: PresetId, playerCap: number): string {

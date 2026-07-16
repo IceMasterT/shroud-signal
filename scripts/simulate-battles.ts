@@ -78,7 +78,7 @@ const HITSCAN_TUNING: Record<
     halfAngle: 0.35,
   },
   plasma: {
-    damage: 28,
+    damage: 30,
     cooldownMs: PLASMA_COOLDOWN_MS,
     range: PLASMA_RANGE,
     halfAngle: 0.25,
