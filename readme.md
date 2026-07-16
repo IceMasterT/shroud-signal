@@ -14,6 +14,16 @@ Every control works the same on desktop and mobile: `Space`/laser button to fire
 
 In battle arenas, the 5 ship lines are a real choice, not cosmetic: each has its own speed/hull/damage profile and a unique `R`-key ability (Fighter overcharges its weapon, Miner drops proximity mines, Transport shields itself, Pathfinder pings the enemy fleet and shares the reveal with its whole team, Tender heals its nearest ally), and a team can't stack more than 2 of the same line by default, so squad composition is an actual decision. The challenger can set the squad rule to "custom" when creating a challenge, lifting the 2-per-line cap for the whole match (the target subreddit can counter it, like the other terms), and a team can also commit to one of 4 curated squad presets (Balanced Wing, Aggro Rush, Turtle Wall, Recon Strike) instead of picking ships individually.
 
+### Finding "Chart a New Sector" / "Challenge a Subreddit"
+
+These are subreddit-level Devvit menu actions, not Mod Tools entries — a common point of confusion. To find them:
+
+1. Go to the subreddit itself (not `mod.reddit.com` or the Mod Tools dashboard).
+2. Look for the **"•••" (more actions)** icon on the subreddit page itself, near "Create Post"/community options.
+3. Both actions show up in that dropdown.
+
+You need to be a moderator of that subreddit, logged in as that account, for either action to appear. Desktop new-Reddit has the most reliable support for custom Devvit menu actions; Reddit's official mobile app/mobile web can be spottier.
+
 ## About this project
 
 Shroud Signal is a spin-off of [Mentaverse](https://mentagame.com), another game I've been developing, also built in Phaser. Same developer, same universe, just me borrowing my own assets for a hackathon. Nothing here is lifted from anyone else's work.
