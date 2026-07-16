@@ -37,6 +37,7 @@ import {
   SHIP_LINES,
   SQUAD_PRESETS,
   SQUAD_RULES,
+  WEAPON_MODES,
 } from '../shared/api.ts'
 import {
   clampPlayerCap,
@@ -297,13 +298,18 @@ async function routeFire(reqMsg: IncomingMessage): Promise<FireRsp | ErrorRsp> {
   if (!postId) return {error: 'no postId', status: 400}
   if (!userId) return {error: 'must be logged in', status: 401}
   const req = await readJson<FireReq>(reqMsg)
-  if (req.mode !== 'laser' && req.mode !== 'torpedo') {
+  if (!WEAPON_MODES.includes(req.mode)) {
     return {error: 'invalid fire mode', status: 400}
   }
   const kind = getPostKind()
   if (kind?.kind === 'match-arena') {
     await fireWeaponInMatch(kind.matchId, userId, req.mode)
   } else {
+    // Free-play sectors only ever have plain laser + torpedo — the newer
+    // battle-arena-only weapons (autocannon/burst/plasma/flak) don't apply here.
+    if (req.mode !== 'laser' && req.mode !== 'torpedo') {
+      return {error: 'invalid fire mode for a sector', status: 400}
+    }
     const username = context.username ?? 'anonymous'
     await fireWeapon(postId, subredditId, userId, username, req.mode)
   }

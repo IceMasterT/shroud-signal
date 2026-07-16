@@ -7,16 +7,25 @@ import type {
   PostKind,
   PresetId,
   Team,
+  WeaponMode,
 } from '../shared/api.ts'
 import {
   ABILITY_COOLDOWN_MS,
+  AUTOCANNON_COOLDOWN_MS,
+  AUTOCANNON_RANGE,
+  BURST_COOLDOWN_MS,
+  BURST_RANGE,
+  FLAK_COOLDOWN_MS,
+  FLAK_RANGE,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   matchChannel,
+  PLASMA_COOLDOWN_MS,
+  PLASMA_RANGE,
   RADAR_PING_DURATION_MS,
   SHIP_LINES,
   SHIP_STATS,
-  SHIP_WEAPON,
+  SHIP_WEAPONS,
   SQUAD_PRESETS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
@@ -54,6 +63,51 @@ const ABILITY_BLURB: Record<PlayerState['line'], string> = {
   transport: 'Bulwark: -40% damage taken for 4s',
   pathfinder: 'Radar Ping: reveals enemy hull for 6s',
   tender: 'Repair Beam: heals your nearest ally',
+}
+
+const WEAPON_LABEL: Record<PlayerState['line'], string> = {
+  fighter: 'Laser + Missile',
+  miner: 'Autocannon',
+  transport: 'Burst Cannon',
+  pathfinder: 'Plasma Cannon',
+  tender: 'Flak Battery — shotgun + shoots down missiles',
+}
+
+/** Visuals + cooldown for every hit-scan (instant) weapon — torpedo is drawn separately since it travels. */
+const HITSCAN_VISUAL: Record<
+  Exclude<WeaponMode, 'torpedo'>,
+  {range: number; cooldownMs: number; color: number; thickness: number}
+> = {
+  laser: {
+    range: LASER_RANGE,
+    cooldownMs: LASER_COOLDOWN_MS,
+    color: 0xff5566,
+    thickness: 3,
+  },
+  autocannon: {
+    range: AUTOCANNON_RANGE,
+    cooldownMs: AUTOCANNON_COOLDOWN_MS,
+    color: 0xffe066,
+    thickness: 2,
+  },
+  burst: {
+    range: BURST_RANGE,
+    cooldownMs: BURST_COOLDOWN_MS,
+    color: 0xff9955,
+    thickness: 4,
+  },
+  plasma: {
+    range: PLASMA_RANGE,
+    cooldownMs: PLASMA_COOLDOWN_MS,
+    color: 0x66ffcc,
+    thickness: 4,
+  },
+  flak: {
+    range: FLAK_RANGE,
+    cooldownMs: FLAK_COOLDOWN_MS,
+    color: 0xdadada,
+    thickness: 5,
+  },
 }
 
 const PRESET_LABEL: Record<PresetId, string> = {
@@ -95,6 +149,7 @@ function shipPickerHtml(): string {
         <span class="stat">SPD ${Math.round(SHIP_STATS[line].speedMul * 100)}%</span>
         <span class="stat">HULL ${Math.round(SHIP_STATS[line].hullMul * 100)}%</span>
         <span class="stat">DMG ${Math.round(SHIP_STATS[line].dmgMul * 100)}%</span><br>
+        <small>${WEAPON_LABEL[line]}</small><br>
         <small>${ABILITY_BLURB[line]}</small>
       </button>`,
   ).join('')
@@ -146,7 +201,13 @@ class BattleScene extends Phaser.Scene {
   lastTorpedoFiredAt = 0
   lastAbilityFiredAt = 0
   joystick: VirtualJoystick | null = null
-  touchWeapon: TouchButton | null = null
+  // Two buttons always exist even though only Fighter has two weapons —
+  // touch buttons are built before the player's own ship line is known
+  // (create() runs before spawnSelf()), so which ship needs which button
+  // can't be decided at construction time. For every other line, the
+  // second button just falls back to firing the same one weapon.
+  touchPrimary: TouchButton | null = null
+  touchSecondary: TouchButton | null = null
   touchAbility: TouchButton | null = null
   others = new Map<string, RemoteShip>()
   mines = new Map<string, Phaser.GameObjects.Arc>()
@@ -228,7 +289,8 @@ class BattleScene extends Phaser.Scene {
 
     if (isTouchDevice()) {
       this.joystick = new VirtualJoystick(this, 110, H - 110, 70)
-      this.touchWeapon = new TouchButton(this, W - 70, H - 70, 34, 'FIRE')
+      this.touchPrimary = new TouchButton(this, W - 160, H - 70, 34, 'FIRE')
+      this.touchSecondary = new TouchButton(this, W - 70, H - 70, 34, 'ALT')
       this.touchAbility = new TouchButton(this, W - 115, H - 160, 34, 'ABL')
     }
   }
@@ -340,12 +402,19 @@ class BattleScene extends Phaser.Scene {
     for (const p of others) this.spawnRemote(p)
   }
 
-  fireLaser(x: number, y: number, rotation: number): void {
+  /** Draws any instant hit-scan weapon's beam — laser, autocannon, burst, plasma, or flak. */
+  fireHitscanBeam(
+    x: number,
+    y: number,
+    rotation: number,
+    mode: Exclude<WeaponMode, 'torpedo'>,
+  ): void {
+    const {range, color, thickness} = HITSCAN_VISUAL[mode]
     const dirAngle = rotation - Math.PI / 2
-    const midX = x + Math.cos(dirAngle) * (LASER_RANGE / 2)
-    const midY = y + Math.sin(dirAngle) * (LASER_RANGE / 2)
+    const midX = x + Math.cos(dirAngle) * (range / 2)
+    const midY = y + Math.sin(dirAngle) * (range / 2)
     const beam = this.add
-      .rectangle(midX, midY, LASER_RANGE, 3, 0xff5566, 0.9)
+      .rectangle(midX, midY, range, thickness, color, 0.9)
       .setRotation(dirAngle)
       .setDepth(18)
     this.tweens.add({
@@ -353,6 +422,32 @@ class BattleScene extends Phaser.Scene {
       alpha: 0,
       duration: 180,
       onComplete: () => beam.destroy(),
+    })
+  }
+
+  /** Dispatches to the right visual for whichever weapon actually fired. */
+  fireWeaponVisual(
+    mode: WeaponMode,
+    x: number,
+    y: number,
+    rotation: number,
+    travelMs: number,
+  ): void {
+    if (mode === 'torpedo') this.fireTorpedo(x, y, rotation, travelMs)
+    else this.fireHitscanBeam(x, y, rotation, mode)
+  }
+
+  flakBurst(x: number, y: number): void {
+    const burst = this.add
+      .circle(x, y, 10, 0xffffff, 0)
+      .setStrokeStyle(3, 0xffffff, 0.9)
+      .setDepth(19)
+    this.tweens.add({
+      targets: burst,
+      radius: 30,
+      alpha: 0,
+      duration: 250,
+      onComplete: () => burst.destroy(),
     })
   }
 
@@ -433,15 +528,21 @@ class BattleScene extends Phaser.Scene {
     } else if (msg.type === 'shot') {
       if (msg.userId === this.self?.userId) {
         // Already drawn optimistically the instant the local player fired —
-        // re-drawing here would either double it up (laser) or make it wait
+        // re-drawing here would either double it up (hit-scan) or make it wait
         // on the realtime round-trip before appearing at all (torpedo).
-      } else if (msg.mode === 'laser') {
-        this.fireLaser(msg.x, msg.y, msg.rotation)
       } else {
-        this.fireTorpedo(msg.x, msg.y, msg.rotation, msg.travelMs)
+        this.fireWeaponVisual(
+          msg.mode,
+          msg.x,
+          msg.y,
+          msg.rotation,
+          msg.travelMs,
+        )
       }
     } else if (msg.type === 'miss') {
       this.fizzleMiss(msg.x, msg.y)
+    } else if (msg.type === 'flak_intercept') {
+      this.flakBurst(msg.x, msg.y)
     } else if (msg.type === 'hit') {
       if (msg.targetUserId === this.self?.userId) {
         if (this.self) {
@@ -547,32 +648,50 @@ class BattleScene extends Phaser.Scene {
       }
     }
 
-    // Each line carries exactly one weapon — both fire keys and the single
-    // touch weapon button all just mean "fire whatever this ship has."
+    // Each line carries its own weapon(s) — Fighter alone has two (primary
+    // laser + secondary missile); every other line has one, so its second
+    // fire input (E key / ALT button) just falls back to the same weapon
+    // rather than being a dead input.
     const nowMs = performance.now()
-    const wantsFire =
-      this.keys.laser.isDown ||
-      this.keys.torpedo.isDown ||
-      this.touchWeapon?.isDown
-    const myWeapon = SHIP_WEAPON[this.self.line]
-    if (myWeapon === 'laser') {
-      if (wantsFire && nowMs - this.lastLaserFiredAt > LASER_COOLDOWN_MS) {
+    const myWeapons = SHIP_WEAPONS[this.self.line]
+    const primaryMode = myWeapons[0]
+    const secondaryMode = myWeapons[1]
+    const spacePressed = this.keys.laser.isDown || this.touchPrimary?.isDown
+    const ePressed = this.keys.torpedo.isDown || this.touchSecondary?.isDown
+
+    if (primaryMode && (spacePressed || (!secondaryMode && ePressed))) {
+      const cooldownMs =
+        primaryMode === 'torpedo'
+          ? TORPEDO_COOLDOWN_MS
+          : HITSCAN_VISUAL[primaryMode].cooldownMs
+      if (nowMs - this.lastLaserFiredAt > cooldownMs) {
         this.lastLaserFiredAt = nowMs
-        this.fireLaser(this.ship.x, this.ship.y, this.ship.rotation)
-        void fetchFire({mode: 'laser'})
+        this.fireWeaponVisual(
+          primaryMode,
+          this.ship.x,
+          this.ship.y,
+          this.ship.rotation,
+          (TORPEDO_RANGE / TORPEDO_SPEED) * 1000,
+        )
+        void fetchFire({mode: primaryMode})
       }
-    } else if (
-      wantsFire &&
-      nowMs - this.lastTorpedoFiredAt > TORPEDO_COOLDOWN_MS
-    ) {
-      this.lastTorpedoFiredAt = nowMs
-      this.fireTorpedo(
-        this.ship.x,
-        this.ship.y,
-        this.ship.rotation,
-        (TORPEDO_RANGE / TORPEDO_SPEED) * 1000,
-      )
-      void fetchFire({mode: 'torpedo'})
+    }
+    if (secondaryMode && ePressed) {
+      const cooldownMs =
+        secondaryMode === 'torpedo'
+          ? TORPEDO_COOLDOWN_MS
+          : HITSCAN_VISUAL[secondaryMode].cooldownMs
+      if (nowMs - this.lastTorpedoFiredAt > cooldownMs) {
+        this.lastTorpedoFiredAt = nowMs
+        this.fireWeaponVisual(
+          secondaryMode,
+          this.ship.x,
+          this.ship.y,
+          this.ship.rotation,
+          (TORPEDO_RANGE / TORPEDO_SPEED) * 1000,
+        )
+        void fetchFire({mode: secondaryMode})
+      }
     }
     if (
       (this.keys.ability.isDown || this.touchAbility?.isDown) &&

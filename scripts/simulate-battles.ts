@@ -18,20 +18,32 @@ import {
   survivalCredit,
 } from '../src/server/abilities.ts'
 import {
+  AUTOCANNON_COOLDOWN_MS,
+  AUTOCANNON_RANGE,
   BULWARK_DURATION_MS,
+  BURST_COOLDOWN_MS,
+  BURST_RANGE,
+  FLAK_COOLDOWN_MS,
+  FLAK_INTERCEPT_RANGE,
+  FLAK_RANGE,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   MATCH_ROUNDS_TO_WIN,
   OVERCHARGE_DURATION_MS,
+  PLASMA_COOLDOWN_MS,
+  PLASMA_RANGE,
+  type PresetId,
   ROUND_MAX_MS,
   SHIP_LINES,
   SHIP_STATS,
-  SHIP_WEAPON,
+  SHIP_WEAPONS,
+  SQUAD_PRESETS,
   TENDER_HEAL_AMOUNT,
   TENDER_HEAL_RANGE,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
   TORPEDO_SPEED,
+  type WeaponMode,
 } from '../src/shared/api.ts'
 
 // ── Tuning mirrored from src/client/battle.ts / src/server/match.ts ────────
@@ -39,12 +51,46 @@ const THRUST = 340
 const DRAG = 0.985
 const MAX_SPEED = 260
 const TURN_SPEED = 3.6
-const LASER_HALF_ANGLE = 0.3
-const LASER_DAMAGE = 20
-const TORPEDO_DAMAGE = 55
-const TORPEDO_IMPACT_RADIUS = 100
 const TICK_MS = 150
+const TORPEDO_IMPACT_RADIUS = 100
 const TORPEDO_AIM_HALF_ANGLE = 0.5 // more lenient than laser — impact radius forgives imprecision
+
+const HITSCAN_TUNING: Record<
+  Exclude<WeaponMode, 'torpedo'>,
+  {damage: number; cooldownMs: number; range: number; halfAngle: number}
+> = {
+  laser: {
+    damage: 20,
+    cooldownMs: LASER_COOLDOWN_MS,
+    range: LASER_RANGE,
+    halfAngle: 0.3,
+  },
+  autocannon: {
+    damage: 14,
+    cooldownMs: AUTOCANNON_COOLDOWN_MS,
+    range: AUTOCANNON_RANGE,
+    halfAngle: 0.3,
+  },
+  burst: {
+    damage: 30,
+    cooldownMs: BURST_COOLDOWN_MS,
+    range: BURST_RANGE,
+    halfAngle: 0.35,
+  },
+  plasma: {
+    damage: 28,
+    cooldownMs: PLASMA_COOLDOWN_MS,
+    range: PLASMA_RANGE,
+    halfAngle: 0.25,
+  },
+  flak: {
+    damage: 38,
+    cooldownMs: FLAK_COOLDOWN_MS,
+    range: FLAK_RANGE,
+    halfAngle: 0.5,
+  },
+}
+const TORPEDO_DAMAGE = 55
 
 let rngState = 0x1234_5678
 function rng(): number {
@@ -83,9 +129,12 @@ type SimPlayer = {
 
 type Mine = {mineId: string; ownerId: string; team: Team; x: number; y: number}
 type PendingTorpedo = {
+  firedAtTick: number
   resolveAtTick: number
   shooterId: string
   shooterTeam: Team
+  x: number
+  y: number
   impactX: number
   impactY: number
 }
@@ -163,6 +212,32 @@ function applyDamage(
   }
 }
 
+/** Finds the nearest in-flight enemy torpedo (interpolating its current position from firedAtTick/resolveAtTick) within Flak range and destroys it. Mirrors match.ts's tryFlakIntercept. */
+function tryFlakIntercept(
+  pendingTorpedoes: PendingTorpedo[],
+  tender: SimPlayer,
+  now: number,
+): boolean {
+  let bestIdx = -1
+  let bestDist = Infinity
+  for (let i = 0; i < pendingTorpedoes.length; i++) {
+    const t = pendingTorpedoes[i]
+    if (!t || t.shooterTeam === tender.team) continue
+    const span = Math.max(1, (t.resolveAtTick - t.firedAtTick) * TICK_MS)
+    const elapsed = now - t.firedAtTick * TICK_MS
+    const frac = Math.min(1, Math.max(0, elapsed / span))
+    const curX = t.x + (t.impactX - t.x) * frac
+    const curY = t.y + (t.impactY - t.y) * frac
+    const dist = Math.hypot(curX - tender.x, curY - tender.y)
+    if (dist > FLAK_INTERCEPT_RANGE || dist >= bestDist) continue
+    bestDist = dist
+    bestIdx = i
+  }
+  if (bestIdx === -1) return false
+  pendingTorpedoes.splice(bestIdx, 1)
+  return true
+}
+
 type RoundResult = {
   winner: Team | 'tie'
   elapsedMs: number
@@ -234,36 +309,52 @@ function simulateRound(players: SimPlayer[]): RoundResult {
 
       const angle = angleTo(p, target)
       const distance = Math.hypot(dx, dy)
-      const weapon = SHIP_WEAPON[p.line] // each line carries exactly one weapon in battle arenas
+      const weapons = SHIP_WEAPONS[p.line] // Fighter carries two; everyone else carries one
 
-      if (
-        weapon === 'laser' &&
-        distance <= LASER_RANGE &&
-        angle <= LASER_HALF_ANGLE &&
-        now - p.lastLaserAt >= LASER_COOLDOWN_MS
-      ) {
-        p.lastLaserAt = now
-        applyDamage(p, target, LASER_DAMAGE, now)
-      }
-      if (!p.alive) continue
+      for (const mode of weapons) {
+        const isPrimary = mode === weapons[0]
+        const lastAt = isPrimary ? p.lastLaserAt : p.lastTorpedoAt
 
-      if (
-        weapon === 'torpedo' &&
-        distance <= TORPEDO_RANGE &&
-        angle <= TORPEDO_AIM_HALF_ANGLE &&
-        now - p.lastTorpedoAt >= TORPEDO_COOLDOWN_MS
-      ) {
-        p.lastTorpedoAt = now
-        // Stop at the target's actual distance, not always full TORPEDO_RANGE
-        // — matches the server fix (overshooting close targets was the bug).
-        const travelMs = (distance / TORPEDO_SPEED) * 1000
-        pendingTorpedoes.push({
-          resolveAtTick: tick + Math.round(travelMs / TICK_MS),
-          shooterId: p.id,
-          shooterTeam: p.team,
-          impactX: p.x + dirX * distance,
-          impactY: p.y + dirY * distance,
-        })
+        if (mode === 'torpedo') {
+          if (
+            distance <= TORPEDO_RANGE &&
+            angle <= TORPEDO_AIM_HALF_ANGLE &&
+            now - lastAt >= TORPEDO_COOLDOWN_MS
+          ) {
+            if (isPrimary) p.lastLaserAt = now
+            else p.lastTorpedoAt = now
+            // Stop at the target's actual distance, not always full
+            // TORPEDO_RANGE — matches the server fix (overshooting close
+            // targets was the bug).
+            const travelMs = (distance / TORPEDO_SPEED) * 1000
+            pendingTorpedoes.push({
+              firedAtTick: tick,
+              resolveAtTick: tick + Math.round(travelMs / TICK_MS),
+              shooterId: p.id,
+              shooterTeam: p.team,
+              x: p.x,
+              y: p.y,
+              impactX: p.x + dirX * distance,
+              impactY: p.y + dirY * distance,
+            })
+          }
+          continue
+        }
+
+        const tuning = HITSCAN_TUNING[mode]
+        if (now - lastAt < tuning.cooldownMs) continue
+
+        if (mode === 'flak' && tryFlakIntercept(pendingTorpedoes, p, now)) {
+          if (isPrimary) p.lastLaserAt = now
+          else p.lastTorpedoAt = now
+          continue // Flak Battery shot down a missile instead of firing this trigger pull
+        }
+
+        if (distance <= tuning.range && angle <= tuning.halfAngle) {
+          if (isPrimary) p.lastLaserAt = now
+          else p.lastTorpedoAt = now
+          applyDamage(p, target, tuning.damage, now)
+        }
       }
 
       if (abilityReady(p.lastAbilityAt, p.line, now)) {
@@ -560,6 +651,106 @@ for (const [key, {aWins, total}] of Object.entries(mirrorStats)) {
   console.log(`${key.padEnd(28)} ${key.split(' vs ')[0]} won ${aWins}/${total}`)
 }
 
+function checkAnomalies(label: string, i: number, result: MatchResult): void {
+  for (const p of result.players) {
+    if (p.hull < 0)
+      anomalies.push(`${label} ${i}: ${p.id} negative hull ${p.hull}`)
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y))
+      anomalies.push(`${label} ${i}: ${p.id} non-finite position`)
+    if (Number.isNaN(p.hull)) anomalies.push(`${label} ${i}: ${p.id} NaN hull`)
+  }
+}
+
 console.log(
-  `\nTotal matches simulated: ${N_RANDOM + SHIP_LINES.length * STACK_RUNS_PER_LINE + Object.keys(mirrorStats).length * PAIR_RUNS}`,
+  '\n=== Phase 4: 50 full matches per squad preset vs a random balanced mix ===',
+)
+const PRESET_RUNS = 50
+const presetStats: Record<PresetId, LineStats> = {
+  balanced: {
+    matches: 0,
+    wins: 0,
+    kills: 0,
+    deaths: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+  },
+  aggro: {
+    matches: 0,
+    wins: 0,
+    kills: 0,
+    deaths: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+  },
+  turtle: {
+    matches: 0,
+    wins: 0,
+    kills: 0,
+    deaths: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+  },
+  recon: {
+    matches: 0,
+    wins: 0,
+    kills: 0,
+    deaths: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+  },
+}
+for (const presetId of Object.keys(SQUAD_PRESETS) as PresetId[]) {
+  const slots = SQUAD_PRESETS[presetId].slice(0, PLAYER_CAP)
+  let wins = 0
+  for (let i = 0; i < PRESET_RUNS; i++) {
+    try {
+      const compB = randomComposition(PLAYER_CAP, true)
+      const result = simulateMatch(slots, compB)
+      if (result.winner === 'A') wins++
+      const s = presetStats[presetId]
+      s.matches++
+      if (result.winner === 'A') s.wins++
+      for (const p of result.players.slice(0, PLAYER_CAP)) {
+        s.kills += p.kills
+        if (!p.alive) s.deaths++
+        s.damageDealt += p.damageDealt
+        s.damageTaken += p.damageTaken
+      }
+      checkAnomalies(`preset ${presetId}`, i, result)
+    } catch (err) {
+      errors++
+      console.error(`preset ${presetId} match ${i} threw:`, err)
+    }
+  }
+  console.log(
+    `${presetId.padEnd(10)} won ${wins}/${PRESET_RUNS} vs random balanced-mix opponents`,
+  )
+}
+
+console.log(
+  '\n=== Phase 5: 50 full matches, fully custom (unrestricted) mixed compositions on both sides ===',
+)
+const customStats = freshStats()
+const N_CUSTOM = 50
+for (let i = 0; i < N_CUSTOM; i++) {
+  try {
+    const compA = randomComposition(PLAYER_CAP, false)
+    const compB = randomComposition(PLAYER_CAP, false)
+    const result = simulateMatch(compA, compB)
+    recordMatch(customStats, result)
+    checkAnomalies('custom', i, result)
+  } catch (err) {
+    errors++
+    console.error(`custom match ${i} threw:`, err)
+  }
+}
+printStats('Phase 5: custom unrestricted compositions', customStats)
+
+console.log(
+  `\n${anomalies.length} total state anomalies across all phases, ${errors} matches threw.`,
+)
+if (anomalies.length) console.log(anomalies.slice(0, 20).join('\n'))
+
+console.log(
+  `\nTotal matches simulated: ${N_RANDOM + SHIP_LINES.length * STACK_RUNS_PER_LINE + Object.keys(mirrorStats).length * PAIR_RUNS + Object.keys(SQUAD_PRESETS).length * PRESET_RUNS + N_CUSTOM}`,
 )

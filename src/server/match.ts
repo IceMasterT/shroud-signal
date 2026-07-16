@@ -7,17 +7,27 @@ import type {
   PresetId,
   ShipLine,
   Team,
+  WeaponMode,
 } from '../shared/api.ts'
 import {
+  AUTOCANNON_COOLDOWN_MS,
+  AUTOCANNON_RANGE,
   BULWARK_DURATION_MS,
+  BURST_COOLDOWN_MS,
+  BURST_RANGE,
+  FLAK_COOLDOWN_MS,
+  FLAK_INTERCEPT_RANGE,
+  FLAK_RANGE,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   MATCH_ROUNDS_TO_WIN,
   matchChannel,
   OVERCHARGE_DURATION_MS,
+  PLASMA_COOLDOWN_MS,
+  PLASMA_RANGE,
   ROUND_MAX_MS,
   ROUND_RESULT_DISPLAY_MS,
-  SHIP_WEAPON,
+  SHIP_WEAPONS,
   SQUAD_PRESETS,
   TENDER_HEAL_AMOUNT,
   TENDER_HEAL_RANGE,
@@ -42,6 +52,63 @@ const LASER_DAMAGE = 20
 const TORPEDO_DAMAGE = 55
 const TORPEDO_IMPACT_RADIUS = 100
 const TORPEDO_AIM_HALF_ANGLE = 0.4
+const AUTOCANNON_DAMAGE = 14
+const AUTOCANNON_HALF_ANGLE = 0.3
+const BURST_DAMAGE = 30
+const BURST_HALF_ANGLE = 0.35
+const PLASMA_DAMAGE = 28
+const PLASMA_HALF_ANGLE = 0.25
+const FLAK_SHOTGUN_DAMAGE = 38
+const FLAK_HALF_ANGLE = 0.5
+
+/** Tuning for every hit-scan (instant, no travel time) weapon. Torpedo is handled separately — it's the only projectile with travel time. */
+const HITSCAN_TUNING: Record<
+  Exclude<WeaponMode, 'torpedo'>,
+  {damage: number; cooldownMs: number; range: number; halfAngle: number}
+> = {
+  laser: {
+    damage: LASER_DAMAGE,
+    cooldownMs: LASER_COOLDOWN_MS,
+    range: LASER_RANGE,
+    halfAngle: LASER_HALF_ANGLE,
+  },
+  autocannon: {
+    damage: AUTOCANNON_DAMAGE,
+    cooldownMs: AUTOCANNON_COOLDOWN_MS,
+    range: AUTOCANNON_RANGE,
+    halfAngle: AUTOCANNON_HALF_ANGLE,
+  },
+  burst: {
+    damage: BURST_DAMAGE,
+    cooldownMs: BURST_COOLDOWN_MS,
+    range: BURST_RANGE,
+    halfAngle: BURST_HALF_ANGLE,
+  },
+  plasma: {
+    damage: PLASMA_DAMAGE,
+    cooldownMs: PLASMA_COOLDOWN_MS,
+    range: PLASMA_RANGE,
+    halfAngle: PLASMA_HALF_ANGLE,
+  },
+  flak: {
+    damage: FLAK_SHOTGUN_DAMAGE,
+    cooldownMs: FLAK_COOLDOWN_MS,
+    range: FLAK_RANGE,
+    halfAngle: FLAK_HALF_ANGLE,
+  },
+}
+
+/** A torpedo in flight, tracked so a Flak Battery can find and destroy it before it lands. */
+type PendingTorpedo = {
+  shooterId: string
+  shooterTeam: Team | null
+  x: number
+  y: number
+  impactX: number
+  impactY: number
+  firedAt: number
+  resolveAt: number
+}
 
 function matchKey(matchId: string): string {
   return `match:${matchId}`
@@ -60,6 +127,9 @@ function matchKillsKey(matchId: string): string {
 }
 function matchMinesKey(matchId: string): string {
   return `match:${matchId}:mines`
+}
+function matchTorpedoesKey(matchId: string): string {
+  return `match:${matchId}:torpedoes`
 }
 
 function randomId(): string {
@@ -293,7 +363,7 @@ export async function movePlayerInMatch(
 export async function fireWeaponInMatch(
   matchId: string,
   shooterId: string,
-  requestedMode: 'laser' | 'torpedo',
+  requestedMode: WeaponMode,
 ): Promise<void> {
   const match = await getMatch(matchId)
   if (match?.status !== 'round_active') return
@@ -303,18 +373,24 @@ export async function fireWeaponInMatch(
   const shooter = JSON.parse(existing) as PlayerState
   if (await isEliminated(matchId, shooterId)) return
 
-  // Each line only carries one weapon in battle arenas — authoritative on
-  // the shooter's own line, not whatever the client asked to fire, so a
-  // client can't fire a weapon its ship doesn't have by sending the wrong mode.
-  void requestedMode
-  const mode = SHIP_WEAPON[shooter.line]
+  // Authoritative on the shooter's own line, not whatever the client asked
+  // to fire — a client can't fire a weapon its ship doesn't have. Fighter is
+  // the only line with two weapons (laser + torpedo); everyone else only
+  // ever has one, so a mismatched request just falls back to it.
+  const weapons = SHIP_WEAPONS[shooter.line]
+  const firstWeapon = weapons[0]
+  if (!firstWeapon) return // unreachable — every line has at least one weapon
+  const mode = weapons.includes(requestedMode) ? requestedMode : firstWeapon
 
   const now = Date.now()
-  if (mode === 'laser') {
-    if (now - (shooter.lastLaserAt ?? 0) < LASER_COOLDOWN_MS) return
+  const isPrimary = mode === firstWeapon
+  const cooldownMs =
+    mode === 'torpedo' ? TORPEDO_COOLDOWN_MS : HITSCAN_TUNING[mode].cooldownMs
+  if (isPrimary) {
+    if (now - (shooter.lastLaserAt ?? 0) < cooldownMs) return
     shooter.lastLaserAt = now
   } else {
-    if (now - (shooter.lastTorpedoAt ?? 0) < TORPEDO_COOLDOWN_MS) return
+    if (now - (shooter.lastTorpedoAt ?? 0) < cooldownMs) return
     shooter.lastTorpedoAt = now
   }
   await redis.hSet(matchPlayersKey(matchId), {
@@ -326,7 +402,46 @@ export async function fireWeaponInMatch(
   const dirY = Math.sin(rotation - Math.PI / 2)
   const enemies = await enemyRoster(matchId, shooterTeam)
 
-  if (mode === 'laser') {
+  if (mode === 'flak' && (await tryFlakIntercept(matchId, shooter, now))) return
+
+  if (mode === 'torpedo') {
+    // A torpedo used to always fly to the full TORPEDO_RANGE in the firing
+    // direction, so firing at anyone closer than that overshot them entirely
+    // — guaranteed miss. Now it stops at the nearest roughly-aimed-at enemy
+    // (a wider cone than laser's, since it isn't meant to be pixel-precise),
+    // falling back to full range only when nothing qualifies (an intentional miss).
+    let travelDistance = TORPEDO_RANGE
+    let closestDist: number | undefined
+    for (const p of enemies) {
+      const dx = p.x - x
+      const dy = p.y - y
+      const distance = Math.hypot(dx, dy)
+      if (distance === 0 || distance > TORPEDO_RANGE) continue
+      const dot = (dx / distance) * dirX + (dy / distance) * dirY
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
+      if (angle > TORPEDO_AIM_HALF_ANGLE) continue
+      if (closestDist === undefined || distance < closestDist)
+        closestDist = distance
+    }
+    if (closestDist !== undefined) travelDistance = closestDist
+
+    const travelMs = (travelDistance / TORPEDO_SPEED) * 1000
+    const impactX = x + dirX * travelDistance
+    const impactY = y + dirY * travelDistance
+    const torpedoId = `${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const pending: PendingTorpedo = {
+      shooterId,
+      shooterTeam,
+      x,
+      y,
+      impactX,
+      impactY,
+      firedAt: now,
+      resolveAt: now + travelMs,
+    }
+    await redis.hSet(matchTorpedoesKey(matchId), {
+      [torpedoId]: JSON.stringify(pending),
+    })
     await broadcastMatch(matchId, {
       type: 'shot',
       userId: shooterId,
@@ -334,49 +449,26 @@ export async function fireWeaponInMatch(
       y,
       rotation,
       mode,
-      travelMs: 0,
+      travelMs,
     })
-
-    let closest: {player: PlayerState; distance: number} | undefined
-    for (const p of enemies) {
-      const dx = p.x - x
-      const dy = p.y - y
-      const distance = Math.hypot(dx, dy)
-      if (distance === 0 || distance > LASER_RANGE) continue
-      const dot = (dx / distance) * dirX + (dy / distance) * dirY
-      const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
-      if (angle > LASER_HALF_ANGLE) continue
-      if (!closest || distance < closest.distance)
-        closest = {player: p, distance}
-    }
-    if (!closest) return
-    await applyDamageInMatch(matchId, shooter, closest.player, LASER_DAMAGE)
+    setTimeout(() => {
+      resolveTorpedoImpactInMatch(
+        matchId,
+        torpedoId,
+        shooterId,
+        shooterTeam,
+        impactX,
+        impactY,
+      ).catch(err =>
+        console.error(
+          `match torpedo resolution failed; ${err instanceof Error ? err.stack : err}`,
+        ),
+      )
+    }, travelMs)
     return
   }
 
-  // A torpedo used to always fly to the full TORPEDO_RANGE in the firing
-  // direction, so firing at anyone closer than that overshot them entirely —
-  // guaranteed miss. Now it stops at the nearest roughly-aimed-at enemy
-  // (a wider cone than laser's, since it isn't meant to be pixel-precise),
-  // falling back to full range only when nothing qualifies (an intentional miss).
-  let travelDistance = TORPEDO_RANGE
-  let closestDist: number | undefined
-  for (const p of enemies) {
-    const dx = p.x - x
-    const dy = p.y - y
-    const distance = Math.hypot(dx, dy)
-    if (distance === 0 || distance > TORPEDO_RANGE) continue
-    const dot = (dx / distance) * dirX + (dy / distance) * dirY
-    const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
-    if (angle > TORPEDO_AIM_HALF_ANGLE) continue
-    if (closestDist === undefined || distance < closestDist)
-      closestDist = distance
-  }
-  if (closestDist !== undefined) travelDistance = closestDist
-
-  const travelMs = (travelDistance / TORPEDO_SPEED) * 1000
-  const impactX = x + dirX * travelDistance
-  const impactY = y + dirY * travelDistance
+  const tuning = HITSCAN_TUNING[mode]
   await broadcastMatch(matchId, {
     type: 'shot',
     userId: shooterId,
@@ -384,30 +476,67 @@ export async function fireWeaponInMatch(
     y,
     rotation,
     mode,
-    travelMs,
+    travelMs: 0,
   })
-  setTimeout(() => {
-    resolveTorpedoImpactInMatch(
-      matchId,
-      shooterId,
-      shooterTeam,
-      impactX,
-      impactY,
-    ).catch(err =>
-      console.error(
-        `match torpedo resolution failed; ${err instanceof Error ? err.stack : err}`,
-      ),
-    )
-  }, travelMs)
+  let closest: {player: PlayerState; distance: number} | undefined
+  for (const p of enemies) {
+    const dx = p.x - x
+    const dy = p.y - y
+    const distance = Math.hypot(dx, dy)
+    if (distance === 0 || distance > tuning.range) continue
+    const dot = (dx / distance) * dirX + (dy / distance) * dirY
+    const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
+    if (angle > tuning.halfAngle) continue
+    if (!closest || distance < closest.distance) closest = {player: p, distance}
+  }
+  if (!closest) return
+  await applyDamageInMatch(matchId, shooter, closest.player, tuning.damage)
+}
+
+/** Scans in-flight enemy torpedoes for one within Flak range (interpolating its current position from firedAt/resolveAt) and destroys it. Returns whether one was found — if so, the Flak shot is consumed and no shotgun blast fires this trigger pull. */
+async function tryFlakIntercept(
+  matchId: string,
+  tender: PlayerState,
+  now: number,
+): Promise<boolean> {
+  const raw = await redis.hGetAll(matchTorpedoesKey(matchId))
+  let bestId: string | undefined
+  let bestDist = Infinity
+  for (const [torpedoId, json] of Object.entries(raw ?? {})) {
+    const t = JSON.parse(json) as PendingTorpedo
+    if (t.shooterTeam === tender.team) continue
+    const span = Math.max(1, t.resolveAt - t.firedAt)
+    const frac = Math.min(1, Math.max(0, (now - t.firedAt) / span))
+    const curX = t.x + (t.impactX - t.x) * frac
+    const curY = t.y + (t.impactY - t.y) * frac
+    const dist = Math.hypot(curX - tender.x, curY - tender.y)
+    if (dist > FLAK_INTERCEPT_RANGE || dist >= bestDist) continue
+    bestDist = dist
+    bestId = torpedoId
+  }
+  if (!bestId) return false
+  const deleted = await redis.hDel(matchTorpedoesKey(matchId), [bestId])
+  if (deleted === 0) return false // race: already resolved or intercepted first
+  await broadcastMatch(matchId, {
+    type: 'flak_intercept',
+    userId: tender.userId,
+    x: tender.x,
+    y: tender.y,
+  })
+  return true
 }
 
 async function resolveTorpedoImpactInMatch(
   matchId: string,
+  torpedoId: string,
   shooterId: string,
   shooterTeam: Team | null,
   impactX: number,
   impactY: number,
 ): Promise<void> {
+  const deleted = await redis.hDel(matchTorpedoesKey(matchId), [torpedoId])
+  if (deleted === 0) return // intercepted by flak before arrival
+
   const shooterJson = await redis.hGet(matchPlayersKey(matchId), shooterId)
   if (!shooterJson) return
   const shooter = JSON.parse(shooterJson) as PlayerState
@@ -568,6 +697,7 @@ async function startRound(match: Match): Promise<Match> {
   const players = await getMatchPlayers(match.matchId)
   await redis.del(matchEliminatedKey(match.matchId))
   await redis.del(matchMinesKey(match.matchId))
+  await redis.del(matchTorpedoesKey(match.matchId))
   for (const p of players) {
     if (!p.team) continue
     const spawn = randSpawn(p.team)

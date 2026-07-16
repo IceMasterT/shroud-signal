@@ -34,16 +34,44 @@ export const LASER_COOLDOWN_MS = 350
 export const TORPEDO_RANGE = 640
 export const TORPEDO_SPEED = 600 // world units/sec
 export const TORPEDO_COOLDOWN_MS = 900
+export const AUTOCANNON_RANGE = 400
+export const AUTOCANNON_COOLDOWN_MS = 200
+export const BURST_RANGE = 340
+export const BURST_COOLDOWN_MS = 500
+export const PLASMA_RANGE = 440
+export const PLASMA_COOLDOWN_MS = 650
+export const FLAK_RANGE = 260
+export const FLAK_COOLDOWN_MS = 700
+/** How close an enemy torpedo must be to a Tender for its Flak Battery to shoot it down instead of firing its shotgun. */
+export const FLAK_INTERCEPT_RANGE = 260
 
-export type WeaponMode = 'laser' | 'torpedo'
+export type WeaponMode =
+  | 'laser'
+  | 'torpedo'
+  | 'autocannon'
+  | 'burst'
+  | 'plasma'
+  | 'flak'
+export const WEAPON_MODES: readonly WeaponMode[] = [
+  'laser',
+  'torpedo',
+  'autocannon',
+  'burst',
+  'plasma',
+  'flak',
+]
 
-/** Each battle-arena line carries exactly one weapon — fast ships get the instant laser, slow/tanky ships get the heavier torpedo. Free-play sectors don't use this; every pilot there has both. */
-export const SHIP_WEAPON: Record<ShipLine, WeaponMode> = {
-  fighter: 'laser',
-  pathfinder: 'laser',
-  tender: 'laser',
-  transport: 'torpedo',
-  miner: 'torpedo',
+/**
+ * Each battle-arena line carries its own signature weapon (Fighter alone
+ * carries two — laser plus missile). Free-play sectors don't use this;
+ * every pilot there has plain laser + torpedo.
+ */
+export const SHIP_WEAPONS: Record<ShipLine, readonly WeaponMode[]> = {
+  fighter: ['laser', 'torpedo'],
+  miner: ['autocannon'],
+  transport: ['burst'],
+  pathfinder: ['plasma'],
+  tender: ['flak'],
 }
 
 /** Per-line combat multipliers for battle arenas only — free-play sectors don't use these. */
@@ -351,6 +379,7 @@ export type MatchMsg =
       x: number
       y: number
     }
+  | {type: 'flak_intercept'; userId: string; x: number; y: number}
   | {
       type: 'round_end'
       winner: Team | 'tie'
