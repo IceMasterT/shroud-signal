@@ -42,7 +42,7 @@ const TURN_SPEED = 3.6
 const LASER_HALF_ANGLE = 0.3
 const LASER_DAMAGE = 20
 const TORPEDO_DAMAGE = 55
-const TORPEDO_IMPACT_RADIUS = 150
+const TORPEDO_IMPACT_RADIUS = 100
 const TICK_MS = 150
 const TORPEDO_AIM_HALF_ANGLE = 0.5 // more lenient than laser — impact radius forgives imprecision
 

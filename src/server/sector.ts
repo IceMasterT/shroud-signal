@@ -23,7 +23,7 @@ const HIT_SCORE = 10
 const KILL_SCORE = 40
 
 const TORPEDO_DAMAGE = 55
-const TORPEDO_IMPACT_RADIUS = 150 // how far off the flight line a target may be and still be caught
+const TORPEDO_IMPACT_RADIUS = 100 // how far off the flight line a target may be and still be caught
 const TORPEDO_AIM_HALF_ANGLE = 0.4
 
 export function sectorChannel(postId: string): string {
