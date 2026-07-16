@@ -37,6 +37,15 @@ export const TORPEDO_COOLDOWN_MS = 1400
 
 export type WeaponMode = 'laser' | 'torpedo'
 
+/** Each battle-arena line carries exactly one weapon — fast ships get the instant laser, slow/tanky ships get the heavier torpedo. Free-play sectors don't use this; every pilot there has both. */
+export const SHIP_WEAPON: Record<ShipLine, WeaponMode> = {
+  fighter: 'laser',
+  pathfinder: 'laser',
+  tender: 'laser',
+  transport: 'torpedo',
+  miner: 'torpedo',
+}
+
 /** Per-line combat multipliers for battle arenas only — free-play sectors don't use these. */
 export type ShipStats = {speedMul: number; hullMul: number; dmgMul: number}
 export const SHIP_STATS: Record<ShipLine, ShipStats> = {

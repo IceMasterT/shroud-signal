@@ -17,6 +17,7 @@ import {
   OVERCHARGE_DURATION_MS,
   ROUND_MAX_MS,
   ROUND_RESULT_DISPLAY_MS,
+  SHIP_WEAPON,
   SQUAD_PRESETS,
   TENDER_HEAL_AMOUNT,
   TENDER_HEAL_RANGE,
@@ -291,7 +292,7 @@ export async function movePlayerInMatch(
 export async function fireWeaponInMatch(
   matchId: string,
   shooterId: string,
-  mode: 'laser' | 'torpedo',
+  requestedMode: 'laser' | 'torpedo',
 ): Promise<void> {
   const match = await getMatch(matchId)
   if (match?.status !== 'round_active') return
@@ -300,6 +301,12 @@ export async function fireWeaponInMatch(
   if (!existing) return
   const shooter = JSON.parse(existing) as PlayerState
   if (await isEliminated(matchId, shooterId)) return
+
+  // Each line only carries one weapon in battle arenas — authoritative on
+  // the shooter's own line, not whatever the client asked to fire, so a
+  // client can't fire a weapon its ship doesn't have by sending the wrong mode.
+  void requestedMode
+  const mode = SHIP_WEAPON[shooter.line]
 
   const now = Date.now()
   if (mode === 'laser') {

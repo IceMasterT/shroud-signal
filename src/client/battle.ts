@@ -16,6 +16,7 @@ import {
   RADAR_PING_DURATION_MS,
   SHIP_LINES,
   SHIP_STATS,
+  SHIP_WEAPON,
   SQUAD_PRESETS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
@@ -50,7 +51,7 @@ const SHIP_LABEL: Record<PlayerState['line'], string> = {
 const ABILITY_BLURB: Record<PlayerState['line'], string> = {
   fighter: 'Overcharge: +50% weapon damage for 5s',
   miner: 'Deploy Mine: plants a proximity mine',
-  transport: 'Bulwark: -50% damage taken for 4s',
+  transport: 'Bulwark: -40% damage taken for 4s',
   pathfinder: 'Radar Ping: reveals enemy hull for 6s',
   tender: 'Repair Beam: heals your nearest ally',
 }
@@ -145,8 +146,7 @@ class BattleScene extends Phaser.Scene {
   lastTorpedoFiredAt = 0
   lastAbilityFiredAt = 0
   joystick: VirtualJoystick | null = null
-  touchLaser: TouchButton | null = null
-  touchMissile: TouchButton | null = null
+  touchWeapon: TouchButton | null = null
   touchAbility: TouchButton | null = null
   others = new Map<string, RemoteShip>()
   mines = new Map<string, Phaser.GameObjects.Arc>()
@@ -217,7 +217,7 @@ class BattleScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(50)
     this.add
-      .text(W - 12, H - 12, '[SPACE] LASER  ·  [E] MISSILE  ·  [R] ABILITY', {
+      .text(W - 12, H - 12, '[SPACE/E] FIRE  ·  [R] ABILITY', {
         fontFamily: 'monospace',
         fontSize: '10px',
         color: '#446688',
@@ -228,8 +228,7 @@ class BattleScene extends Phaser.Scene {
 
     if (isTouchDevice()) {
       this.joystick = new VirtualJoystick(this, 110, H - 110, 70)
-      this.touchMissile = new TouchButton(this, W - 70, H - 70, 34, 'MSL')
-      this.touchLaser = new TouchButton(this, W - 160, H - 70, 34, 'LSR')
+      this.touchWeapon = new TouchButton(this, W - 70, H - 70, 34, 'FIRE')
       this.touchAbility = new TouchButton(this, W - 115, H - 160, 34, 'ABL')
     }
   }
@@ -548,17 +547,22 @@ class BattleScene extends Phaser.Scene {
       }
     }
 
+    // Each line carries exactly one weapon — both fire keys and the single
+    // touch weapon button all just mean "fire whatever this ship has."
     const nowMs = performance.now()
-    if (
-      (this.keys.laser.isDown || this.touchLaser?.isDown) &&
-      nowMs - this.lastLaserFiredAt > LASER_COOLDOWN_MS
-    ) {
-      this.lastLaserFiredAt = nowMs
-      this.fireLaser(this.ship.x, this.ship.y, this.ship.rotation)
-      void fetchFire({mode: 'laser'})
-    }
-    if (
-      (this.keys.torpedo.isDown || this.touchMissile?.isDown) &&
+    const wantsFire =
+      this.keys.laser.isDown ||
+      this.keys.torpedo.isDown ||
+      this.touchWeapon?.isDown
+    const myWeapon = SHIP_WEAPON[this.self.line]
+    if (myWeapon === 'laser') {
+      if (wantsFire && nowMs - this.lastLaserFiredAt > LASER_COOLDOWN_MS) {
+        this.lastLaserFiredAt = nowMs
+        this.fireLaser(this.ship.x, this.ship.y, this.ship.rotation)
+        void fetchFire({mode: 'laser'})
+      }
+    } else if (
+      wantsFire &&
       nowMs - this.lastTorpedoFiredAt > TORPEDO_COOLDOWN_MS
     ) {
       this.lastTorpedoFiredAt = nowMs
