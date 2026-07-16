@@ -260,15 +260,27 @@ export class SectorScene extends Phaser.Scene {
       'pathfinder',
       'tender',
     ]
+
+    // A 2-column grid, capped at a compact width, keeps this on-screen down
+    // to narrow phone viewports instead of a single row that only fit desktop.
+    const cols = 2
+    const gap = 10
+    const panelW = Math.min(320, W - 32)
+    const cardW = (panelW - gap) / 2
+    const cardH = 64
+    const rows = Math.ceil(lines.length / cols)
+    const gridH = rows * cardH + (rows - 1) * gap
+    const gridTop = H / 2 - gridH / 2 + 10
+
     const objects: Phaser.GameObjects.GameObject[] = [
       this.add
         .rectangle(W / 2, H / 2, W, H, 0x050c18, 0.92)
         .setScrollFactor(0)
         .setDepth(200),
       this.add
-        .text(W / 2, H / 2 - 90, 'CHOOSE YOUR SHIP', {
+        .text(W / 2, gridTop - 26, 'CHOOSE YOUR SHIP', {
           fontFamily: 'monospace',
-          fontSize: '16px',
+          fontSize: '14px',
           color: '#eef6ff',
         })
         .setOrigin(0.5, 0.5)
@@ -277,14 +289,14 @@ export class SectorScene extends Phaser.Scene {
     ]
 
     return new Promise(resolve => {
-      const cardW = 140
-      const cardH = 90
-      const gap = 16
-      const totalW = lines.length * cardW + (lines.length - 1) * gap
-      const startX = W / 2 - totalW / 2 + cardW / 2
       for (const [i, line] of lines.entries()) {
-        const x = startX + i * (cardW + gap)
-        const y = H / 2
+        const row = Math.floor(i / cols)
+        const itemsInRow = Math.min(cols, lines.length - row * cols)
+        const rowW = itemsInRow * cardW + (itemsInRow - 1) * gap
+        const rowLeft = W / 2 - rowW / 2
+        const col = i % cols
+        const x = rowLeft + col * (cardW + gap) + cardW / 2
+        const y = gridTop + row * (cardH + gap) + cardH / 2
         const card = this.add
           .rectangle(x, y, cardW, cardH, 0x141a28, 1)
           .setStrokeStyle(1, 0xff9500)
@@ -294,7 +306,7 @@ export class SectorScene extends Phaser.Scene {
         const label = this.add
           .text(x, y, SHIP_LABEL[line], {
             fontFamily: 'monospace',
-            fontSize: '12px',
+            fontSize: '11px',
             color: '#eef6ff',
             align: 'center',
           })
