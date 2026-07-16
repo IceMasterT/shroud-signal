@@ -1,5 +1,13 @@
 import type * as Phaser from 'phaser'
 
+/** True on touch-primary devices (phones/tablets) — desktop mice/trackpads don't count, even on touch-enabled laptops. */
+export function isTouchDevice(): boolean {
+  return (
+    ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
+    window.matchMedia('(pointer: coarse)').matches
+  )
+}
+
 /**
  * A screen-fixed drag joystick. While a pointer is held inside its base
  * radius (or dragged from there), `active` is true and `angle`/`magnitude`

@@ -18,7 +18,7 @@ import {
   fetchSectorJoin,
   isErrorRsp,
 } from './fetch.ts'
-import {TouchButton, VirtualJoystick} from './touchControls.ts'
+import {isTouchDevice, TouchButton, VirtualJoystick} from './touchControls.ts'
 
 const WORLD_HALF = 900
 const THRUST = 340
@@ -167,17 +167,19 @@ export class SectorScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(50)
 
-    this.joystick = new VirtualJoystick(this, 110, H - 110, 70)
-    this.touchMissile = new TouchButton(this, W - 70, H - 70, 34, 'MSL')
-    this.touchLaser = new TouchButton(this, W - 160, H - 70, 34, 'LSR')
-    new TouchButton(
-      this,
-      W - 115,
-      H - 160,
-      34,
-      'LDR',
-      () => void this.toggleLeaderboard(),
-    )
+    if (isTouchDevice()) {
+      this.joystick = new VirtualJoystick(this, 110, H - 110, 70)
+      this.touchMissile = new TouchButton(this, W - 70, H - 70, 34, 'MSL')
+      this.touchLaser = new TouchButton(this, W - 160, H - 70, 34, 'LSR')
+      new TouchButton(
+        this,
+        W - 115,
+        H - 160,
+        34,
+        'LDR',
+        () => void this.toggleLeaderboard(),
+      )
+    }
 
     this.leaderboardPanel = this.add
       .text(W / 2, H / 2, '', {
