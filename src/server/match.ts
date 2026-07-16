@@ -48,7 +48,7 @@ import {
 } from './abilities.ts'
 
 const LASER_HALF_ANGLE = 0.3
-const LASER_DAMAGE = 20
+const LASER_DAMAGE = 14
 const TORPEDO_DAMAGE = 55
 const TORPEDO_IMPACT_RADIUS = 100
 const TORPEDO_AIM_HALF_ANGLE = 0.4

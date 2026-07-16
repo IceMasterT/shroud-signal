@@ -60,7 +60,7 @@ const HITSCAN_TUNING: Record<
   {damage: number; cooldownMs: number; range: number; halfAngle: number}
 > = {
   laser: {
-    damage: 20,
+    damage: 14,
     cooldownMs: LASER_COOLDOWN_MS,
     range: LASER_RANGE,
     halfAngle: 0.3,
