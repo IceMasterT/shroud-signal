@@ -39,7 +39,7 @@ export function isEligibleToJoin(
 ): boolean {
   if (joinPolicy === 'open') return true
   if (isModerator) return true
-  return whitelist.includes(username.toLowerCase())
+  return whitelist.some(w => w.toLowerCase() === username.toLowerCase())
 }
 
 /** A ship line's actual max hull, scaled from the shared 100-hull baseline. */

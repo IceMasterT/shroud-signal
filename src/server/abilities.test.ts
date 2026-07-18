@@ -51,11 +51,12 @@ test('isEligibleToJoin allows anyone when the policy is open', () => {
 })
 
 test('isEligibleToJoin restricts to the whitelist (case-insensitive)', () => {
-  assert.equal(
-    isEligibleToJoin('whitelist', ['alice'], 'Alice', false),
-    true,
-  )
+  assert.equal(isEligibleToJoin('whitelist', ['alice'], 'Alice', false), true)
   assert.equal(isEligibleToJoin('whitelist', ['alice'], 'bob', false), false)
+})
+
+test('isEligibleToJoin matches case-insensitively even when the whitelist entry itself has mixed case', () => {
+  assert.equal(isEligibleToJoin('whitelist', ['Alice'], 'alice', false), true)
 })
 
 test('isEligibleToJoin always allows moderators under a whitelist', () => {
