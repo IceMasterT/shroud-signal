@@ -879,8 +879,8 @@ function renderMatch(
         <p>${title}</p>
         <p>Warm-up: <span class="stat">${secsLeft}s</span> left, or when both teams are full.</p>
         <div class="rosters">
-          <div class="roster">${teamLabel('A', isScrimmage).toUpperCase()}<br>${rosterList(rosterA, match.playerCap)}</div>
-          <div class="roster">${teamLabel('B', isScrimmage).toUpperCase()}<br>${rosterList(rosterB, match.playerCap)}</div>
+          <div class="roster">TEAM ${teamLabel('A', isScrimmage).toUpperCase()}<br>${rosterList(rosterA, match.playerCap)}</div>
+          <div class="roster">TEAM ${teamLabel('B', isScrimmage).toUpperCase()}<br>${rosterList(rosterB, match.playerCap)}</div>
         </div>
         ${self ? '<p>You are in. Waiting for the round to start…</p>' : isScrimmage ? `<div class="ship-picker">${shipPickerHtml()}</div>` : renderJoinChoice(match)}
       </div>
