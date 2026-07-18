@@ -210,6 +210,9 @@ export async function createMatch(challenge: Challenge): Promise<Match> {
     playerCap: challenge.playerCap,
     warmupMinutes: challenge.warmupMinutes,
     squadRule: challenge.squadRule,
+    // Cross-subreddit Challenges never offer a team-pick choice — team is
+    // always "which subreddit you're on" — so this is a fixed, unused default.
+    teamAssignMode: 'auto',
     joinModeA: null,
     joinModeB: null,
     presetIdA: null,

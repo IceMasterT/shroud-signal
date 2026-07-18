@@ -246,6 +246,9 @@ export type PostKind =
 export type SquadRule = 'capped' | 'custom'
 export const SQUAD_RULES: readonly SquadRule[] = ['capped', 'custom']
 
+/** Scrimmage-only: whether players pick their own team or the server auto-balances them. Cross-subreddit Challenge matches don't use this — team is always "which subreddit's post you're on" for those. */
+export type TeamAssignMode = 'auto' | 'manual'
+
 export type ChallengeStatus =
   | 'pending'
   | 'countered'
@@ -324,6 +327,7 @@ export type Match = {
   playerCap: number
   warmupMinutes: number
   squadRule: SquadRule
+  teamAssignMode: TeamAssignMode
   joinModeA: 'individual' | 'preset' | null
   joinModeB: 'individual' | 'preset' | null
   presetIdA: PresetId | null
@@ -365,10 +369,11 @@ export type MatchAbilityRsp = {ok: true}
 export type CreateScrimmageReq = {
   matchSize: '5v5' | '10v10'
   squadRule: SquadRule
+  teamAssignMode: TeamAssignMode
 }
 export type CreateScrimmageRsp = {matchId: string; arenaUrl: string}
 
-export type ScrimmageJoinReq = {line: ShipLine}
+export type ScrimmageJoinReq = {line: ShipLine; team: Team | null}
 export type ScrimmageJoinRsp = {team: Team}
 
 /** Broadcast on a match's own realtime channel (`match:{matchId}`), separate from a free-play sector's channel. */
