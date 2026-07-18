@@ -786,6 +786,7 @@ let scene: BattleScene | null = null
 let lastRound = 0
 let mySide: Team = 'A'
 let isScrimmage = false
+let scrimmageTeamChoice: Team | null = null
 
 function rosterList(players: PlayerState[], cap: number): string {
   const names = players.map(p => escapeHtml(p.username)).join(', ') || '(empty)'
@@ -824,14 +825,30 @@ async function joinBattle(
   await poll()
 }
 
-async function joinScrimmageBattle(line: PlayerState['line']): Promise<void> {
-  const rsp = await fetchScrimmageJoin({line})
+async function joinScrimmageBattle(
+  line: PlayerState['line'],
+  team: Team | null,
+): Promise<void> {
+  const rsp = await fetchScrimmageJoin({line, team})
   if (isErrorRsp(rsp)) {
     showOverlay(
       `<div class="panel"><p class="error">${escapeHtml(rsp.error)}</p></div>`,
     )
   }
   await poll()
+}
+
+function renderScrimmageJoinChoice(match: Match): string {
+  if (match.teamAssignMode === 'manual' && !scrimmageTeamChoice) {
+    return `
+      <p>Pick your team:</p>
+      <div class="row">
+        <button id="pick-purple">Purple Team</button>
+        <button id="pick-orange">Orange Team</button>
+      </div>
+    `
+  }
+  return `<div class="ship-picker">${shipPickerHtml()}</div>`
 }
 
 function renderJoinChoice(match: Match): string {
@@ -882,17 +899,29 @@ function renderMatch(
           <div class="roster">TEAM ${teamLabel('A', isScrimmage).toUpperCase()}<br>${rosterList(rosterA, match.playerCap)}</div>
           <div class="roster">TEAM ${teamLabel('B', isScrimmage).toUpperCase()}<br>${rosterList(rosterB, match.playerCap)}</div>
         </div>
-        ${self ? '<p>You are in. Waiting for the round to start…</p>' : isScrimmage ? `<div class="ship-picker">${shipPickerHtml()}</div>` : renderJoinChoice(match)}
+        ${self ? '<p>You are in. Waiting for the round to start…</p>' : isScrimmage ? renderScrimmageJoinChoice(match) : renderJoinChoice(match)}
       </div>
     `)
     if (!self) {
       if (isScrimmage) {
+        document
+          .getElementById('pick-purple')
+          ?.addEventListener('click', () => {
+            scrimmageTeamChoice = 'A'
+            void poll()
+          })
+        document
+          .getElementById('pick-orange')
+          ?.addEventListener('click', () => {
+            scrimmageTeamChoice = 'B'
+            void poll()
+          })
         for (const btn of document.querySelectorAll<HTMLButtonElement>(
           '.ship-pick',
         )) {
           btn.addEventListener('click', () => {
             const line = btn.dataset.line as PlayerState['line']
-            void joinScrimmageBattle(line)
+            void joinScrimmageBattle(line, scrimmageTeamChoice)
           })
         }
       } else {

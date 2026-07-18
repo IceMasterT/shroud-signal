@@ -35,6 +35,16 @@ async function runSetup(): Promise<void> {
         defaultValue: ['5v5'],
       },
       {
+        type: 'select',
+        name: 'teamAssignMode',
+        label: 'Team assignment',
+        options: [
+          {label: 'Auto-balance', value: 'auto'},
+          {label: 'Players pick their own team', value: 'manual'},
+        ],
+        defaultValue: ['auto'],
+      },
+      {
         type: 'boolean',
         name: 'customSquadRule',
         label: 'Custom squad rule (no 2-per-line cap)',
@@ -52,9 +62,12 @@ async function runSetup(): Promise<void> {
     return
   }
   const matchSize = result.values.matchSize?.[0] === '10v10' ? '10v10' : '5v5'
+  const teamAssignMode =
+    result.values.teamAssignMode?.[0] === 'manual' ? 'manual' : 'auto'
   const rsp = await fetchScrimmageCreate({
     matchSize,
     squadRule: result.values.customSquadRule ? 'custom' : 'capped',
+    teamAssignMode,
   })
   if (isErrorRsp(rsp)) {
     render(
