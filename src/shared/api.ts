@@ -240,6 +240,8 @@ export type PostKind =
   | {kind: 'challenge-setup'}
   | {kind: 'challenge'; challengeId: string; role: 'challenger' | 'target'}
   | {kind: 'match-arena'; matchId: string; side: Team}
+  | {kind: 'scrimmage-setup'}
+  | {kind: 'scrimmage'; matchId: string}
 
 export type SquadRule = 'capped' | 'custom'
 export const SQUAD_RULES: readonly SquadRule[] = ['capped', 'custom']
@@ -355,6 +357,20 @@ export type JoinMatchRsp = {ok: true}
 export type MatchAbilityReq = Record<string, never>
 export type MatchAbilityRsp = {ok: true}
 
+/**
+ * A scrimmage is single-subreddit, mod-configured practice for the
+ * cross-subreddit Challenge above — a separate creation/join pipeline that
+ * builds a plain `Match` record and reuses its entire round engine unchanged.
+ */
+export type CreateScrimmageReq = {
+  matchSize: '5v5' | '10v10'
+  squadRule: SquadRule
+}
+export type CreateScrimmageRsp = {matchId: string; arenaUrl: string}
+
+export type ScrimmageJoinReq = {line: ShipLine}
+export type ScrimmageJoinRsp = {team: Team}
+
 /** Broadcast on a match's own realtime channel (`match:{matchId}`), separate from a free-play sector's channel. */
 export type MatchMsg =
   | {type: 'roster'; player: PlayerState}
@@ -413,9 +429,12 @@ export const Endpoint = {
   MatchJoin: 'api/match/join',
   MatchAbility: 'api/match/ability',
   MatchState: 'api/match/state',
+  ScrimmageCreate: 'api/scrimmage/create',
+  ScrimmageJoin: 'api/scrimmage/join',
   OnAppInstall: 'internal/on/app/install',
   OnMenuNewPost: 'internal/on/menu/new-post',
   OnMenuNewChallenge: 'internal/on/menu/new-challenge',
+  OnMenuNewScrimmage: 'internal/on/menu/new-scrimmage',
   OnGalaxyPulse: 'internal/on/tick/pulse',
 } as const
 
@@ -435,8 +454,11 @@ export const EndpointMethod = {
   [Endpoint.MatchJoin]: 'POST',
   [Endpoint.MatchAbility]: 'POST',
   [Endpoint.MatchState]: 'GET',
+  [Endpoint.ScrimmageCreate]: 'POST',
+  [Endpoint.ScrimmageJoin]: 'POST',
   [Endpoint.OnAppInstall]: 'POST',
   [Endpoint.OnMenuNewPost]: 'POST',
   [Endpoint.OnMenuNewChallenge]: 'POST',
+  [Endpoint.OnMenuNewScrimmage]: 'POST',
   [Endpoint.OnGalaxyPulse]: 'POST',
 } as const satisfies {[endpoint: string]: 'GET' | 'POST'}
