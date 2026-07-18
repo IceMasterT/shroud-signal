@@ -530,12 +530,17 @@ async function routeScrimmageCreate(
   if (!SQUAD_RULES.includes(req.squadRule)) {
     return {error: 'invalid squad rule', status: 400}
   }
-  const match = await createScrimmage(
-    subredditName,
-    req.matchSize,
-    req.squadRule,
-  )
-  return {matchId: match.matchId, arenaUrl: match.arenaUrlA}
+  try {
+    const match = await createScrimmage(
+      subredditName,
+      req.matchSize,
+      req.squadRule,
+    )
+    return {matchId: match.matchId, arenaUrl: match.arenaUrlA}
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {error: `couldn't create the scrimmage: ${msg}`, status: 400}
+  }
 }
 
 async function routeScrimmageJoin(
