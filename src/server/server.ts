@@ -509,12 +509,17 @@ async function routeMatchState(): Promise<MatchStateRsp | ErrorRsp> {
   const rosterB = players.filter(p => p.team === 'B')
   const self = players.find(p => p.userId === userId) ?? null
   let spectator = false
-  if (!self && kind?.kind === 'scrimmage' && context.username) {
+  if (!self && kind?.kind === 'scrimmage') {
+    const username = context.username ?? 'anonymous'
+    const isModerator =
+      match.joinPolicy === 'whitelist'
+        ? await isRequesterModeratorSafe()
+        : false
     spectator = !isEligibleToJoin(
       match.joinPolicy,
       match.whitelist,
-      context.username,
-      await isRequesterModerator(),
+      username,
+      isModerator,
     )
   }
   return {
@@ -533,6 +538,15 @@ async function isRequesterModerator(): Promise<boolean> {
   if (!user) return false
   const perms = await user.getModPermissionsForSubreddit(subredditName)
   return perms.length > 0
+}
+
+/** Same as isRequesterModerator, but degrades to 'not a moderator' on any failure instead of throwing — used where a transient Reddit API error shouldn't break the whole request. */
+async function isRequesterModeratorSafe(): Promise<boolean> {
+  try {
+    return await isRequesterModerator()
+  } catch {
+    return false
+  }
 }
 
 async function routeScrimmageCreate(
@@ -559,6 +573,9 @@ async function routeScrimmageCreate(
   }
   if (req.presetId !== null && !(req.presetId in SQUAD_PRESETS)) {
     return {error: 'invalid preset', status: 400}
+  }
+  if (!Array.isArray(req.whitelist)) {
+    return {error: 'invalid whitelist', status: 400}
   }
   try {
     const match = await createScrimmage(
