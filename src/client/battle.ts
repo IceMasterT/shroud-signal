@@ -37,6 +37,7 @@ import {
   fetchMatchJoin,
   fetchMatchState,
   fetchMove,
+  fetchScrimmageJoin,
   isErrorRsp,
 } from './fetch.ts'
 import {isTouchDevice, TouchButton, VirtualJoystick} from './touchControls.ts'
@@ -161,6 +162,12 @@ function getKind(): PostKind | undefined {
   return data as unknown as PostKind
 }
 
+/** Scrimmages display Purple/Orange instead of Team A/B — a display-only relabeling, `Team` itself always stays 'A'|'B'. */
+function teamLabel(team: Team, scrimmage: boolean): string {
+  if (!scrimmage) return team
+  return team === 'A' ? 'Purple' : 'Orange'
+}
+
 function escapeHtml(s: string): string {
   return s.replace(
     /[&<>"']/g,
@@ -185,6 +192,7 @@ type RemoteShip = {
 }
 
 class BattleScene extends Phaser.Scene {
+  isScrimmage = false
   ship: Phaser.GameObjects.Image | null = null
   velX = 0
   velY = 0
@@ -329,7 +337,7 @@ class BattleScene extends Phaser.Scene {
     if (p.team === 'B') sprite.setTint(0xffb060)
     else sprite.setTint(0x8fd6ff)
     const label = this.add
-      .text(0, 30, `${p.username} · ${p.team}`, {
+      .text(0, 30, `${p.username} · ${teamLabel(p.team, this.isScrimmage)}`, {
         fontFamily: 'monospace',
         fontSize: '10px',
         color: '#9fb4c9',
@@ -504,19 +512,23 @@ class BattleScene extends Phaser.Scene {
   }
 
   updateHud(): void {
-    if (!this.self) return
     const alive = [...this.others.values()].filter(r => !r.eliminated)
     const aliveA =
-      (this.self.team === 'A' ? 1 : 0) +
+      (this.self?.team === 'A' ? 1 : 0) +
       alive.filter(r => r.team === 'A').length
     const aliveB =
-      (this.self.team === 'B' ? 1 : 0) +
+      (this.self?.team === 'B' ? 1 : 0) +
       alive.filter(r => r.team === 'B').length
+    const teamLine = this.self
+      ? `TEAM ${teamLabel(this.self.team ?? 'A', this.isScrimmage)}`
+      : 'SPECTATING'
     this.hudTop.setText(
-      `TEAM ${this.self.team}  ·  A ${aliveA} vs B ${aliveB} remaining`,
+      `${teamLine}  ·  ${teamLabel('A', this.isScrimmage)} ${aliveA} vs ${teamLabel('B', this.isScrimmage)} ${aliveB} remaining`,
     )
     this.hudBottom.setText(
-      `${this.self.username}  ·  ${SHIP_LABEL[this.self.line]}  ·  HULL ${this.self.hull}  ·  KILLS ${this.self.kills}${this.selfEliminated ? '  ·  ELIMINATED (spectating)' : ''}`,
+      this.self
+        ? `${this.self.username}  ·  ${SHIP_LABEL[this.self.line]}  ·  HULL ${this.self.hull}  ·  KILLS ${this.self.kills}${this.selfEliminated ? '  ·  ELIMINATED (spectating)' : ''}`
+        : 'Spectator view',
     )
   }
 
@@ -773,6 +785,7 @@ function hideOverlay(): void {
 let scene: BattleScene | null = null
 let lastRound = 0
 let mySide: Team = 'A'
+let isScrimmage = false
 
 function rosterList(players: PlayerState[], cap: number): string {
   const names = players.map(p => escapeHtml(p.username)).join(', ') || '(empty)'
@@ -791,7 +804,7 @@ function killsScoreboard(
   const rows = ranked
     .map(
       (p, i) =>
-        `${i + 1}. ${escapeHtml(p.username)} (${p.team}) — ${p.kills} kill${p.kills === 1 ? '' : 's'}`,
+        `${i + 1}. ${escapeHtml(p.username)} (${teamLabel(p.team ?? 'A', isScrimmage)}) — ${p.kills} kill${p.kills === 1 ? '' : 's'}`,
     )
     .join('<br>')
   return `<p><b>TOP KILLS</b><br>${rows}</p>`
@@ -803,6 +816,16 @@ async function joinBattle(
   presetId: PresetId | null,
 ): Promise<void> {
   const rsp = await fetchMatchJoin({line, mode, presetId})
+  if (isErrorRsp(rsp)) {
+    showOverlay(
+      `<div class="panel"><p class="error">${escapeHtml(rsp.error)}</p></div>`,
+    )
+  }
+  await poll()
+}
+
+async function joinScrimmageBattle(line: PlayerState['line']): Promise<void> {
+  const rsp = await fetchScrimmageJoin({line})
   if (isErrorRsp(rsp)) {
     showOverlay(
       `<div class="panel"><p class="error">${escapeHtml(rsp.error)}</p></div>`,
@@ -847,36 +870,50 @@ function renderMatch(
       0,
       Math.round((match.warmupEndsAt - Date.now()) / 1000),
     )
+    const title = isScrimmage
+      ? `Practice Scrimmage · ${escapeHtml(match.subredditAName)}`
+      : `r/${escapeHtml(match.subredditAName)} vs r/${escapeHtml(match.subredditBName)}`
     showOverlay(`
       <div class="panel">
         <h1>Last One Standing</h1>
-        <p>r/${escapeHtml(match.subredditAName)} vs r/${escapeHtml(match.subredditBName)}</p>
+        <p>${title}</p>
         <p>Warm-up: <span class="stat">${secsLeft}s</span> left, or when both teams are full.</p>
         <div class="rosters">
-          <div class="roster">TEAM A<br>${rosterList(rosterA, match.playerCap)}</div>
-          <div class="roster">TEAM B<br>${rosterList(rosterB, match.playerCap)}</div>
+          <div class="roster">${teamLabel('A', isScrimmage).toUpperCase()}<br>${rosterList(rosterA, match.playerCap)}</div>
+          <div class="roster">${teamLabel('B', isScrimmage).toUpperCase()}<br>${rosterList(rosterB, match.playerCap)}</div>
         </div>
-        ${self ? '<p>You are in. Waiting for the round to start…</p>' : renderJoinChoice(match)}
+        ${self ? '<p>You are in. Waiting for the round to start…</p>' : isScrimmage ? `<div class="ship-picker">${shipPickerHtml()}</div>` : renderJoinChoice(match)}
       </div>
     `)
     if (!self) {
-      for (const btn of document.querySelectorAll<HTMLButtonElement>(
-        '.ship-pick',
-      )) {
-        btn.addEventListener('click', () => {
-          const line = btn.dataset.line as PlayerState['line']
-          void joinBattle(line, 'individual', null)
-        })
-      }
-      for (const btn of document.querySelectorAll<HTMLButtonElement>(
-        '.preset-pick',
-      )) {
-        btn.addEventListener('click', () => {
-          const presetId = btn.dataset.preset as PresetId
-          const slots = SQUAD_PRESETS[presetId].slice(0, match.playerCap)
-          const line = slots[0]
-          if (line) void joinBattle(line, 'preset', presetId)
-        })
+      if (isScrimmage) {
+        for (const btn of document.querySelectorAll<HTMLButtonElement>(
+          '.ship-pick',
+        )) {
+          btn.addEventListener('click', () => {
+            const line = btn.dataset.line as PlayerState['line']
+            void joinScrimmageBattle(line)
+          })
+        }
+      } else {
+        for (const btn of document.querySelectorAll<HTMLButtonElement>(
+          '.ship-pick',
+        )) {
+          btn.addEventListener('click', () => {
+            const line = btn.dataset.line as PlayerState['line']
+            void joinBattle(line, 'individual', null)
+          })
+        }
+        for (const btn of document.querySelectorAll<HTMLButtonElement>(
+          '.preset-pick',
+        )) {
+          btn.addEventListener('click', () => {
+            const presetId = btn.dataset.preset as PresetId
+            const slots = SQUAD_PRESETS[presetId].slice(0, match.playerCap)
+            const line = slots[0]
+            if (line) void joinBattle(line, 'preset', presetId)
+          })
+        }
       }
     }
     return
@@ -901,7 +938,7 @@ function renderMatch(
     const winnerText =
       match.lastRoundWinner === 'tie'
         ? 'Round tied (time limit)'
-        : `Team ${match.lastRoundWinner} wins the round`
+        : `Team ${teamLabel(match.lastRoundWinner ?? 'A', isScrimmage)} wins the round`
     showOverlay(`
       <div class="panel">
         <h1>Round ${match.round} complete</h1>
@@ -917,7 +954,7 @@ function renderMatch(
     const winnerText =
       match.winner === 'tie'
         ? "It's a tie!"
-        : `Team ${match.winner} wins the battle!`
+        : `Team ${teamLabel(match.winner ?? 'A', isScrimmage)} wins the battle!`
     showOverlay(`
       <div class="panel">
         <h1>${winnerText}</h1>
@@ -941,11 +978,12 @@ async function poll(): Promise<void> {
 
 async function boot(): Promise<void> {
   const kind = getKind()
-  if (kind?.kind !== 'match-arena') {
+  if (kind?.kind !== 'match-arena' && kind?.kind !== 'scrimmage') {
     showOverlay('<div class="panel"><p>Nothing to see here.</p></div>')
     return
   }
-  mySide = kind.side
+  isScrimmage = kind.kind === 'scrimmage'
+  if (kind.kind === 'match-arena') mySide = kind.side
 
   const game = new Phaser.Game({
     type: Phaser.AUTO,
@@ -962,6 +1000,7 @@ async function boot(): Promise<void> {
   })
   game.events.once('ready', () => {
     scene = game.scene.getScene('battle') as BattleScene
+    scene.isScrimmage = isScrimmage
   })
 
   connectRealtime<MatchMsg>({
