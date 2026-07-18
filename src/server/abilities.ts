@@ -1,4 +1,4 @@
-import type {PlayerState, ShipLine, Team} from '../shared/api.ts'
+import type {JoinPolicy, PlayerState, ShipLine, Team} from '../shared/api.ts'
 import {
   ABILITY_COOLDOWN_MS,
   BULWARK_DAMAGE_MUL,
@@ -28,6 +28,18 @@ export function assignAutoTeam(players: Pick<PlayerState, 'team'>[]): Team {
   const countA = players.filter(p => p.team === 'A').length
   const countB = players.filter(p => p.team === 'B').length
   return countA <= countB ? 'A' : 'B'
+}
+
+/** Whether a user may join a scrimmage team. Everyone is eligible under 'open'; under 'whitelist', only listed usernames (case-insensitive) or moderators may — everyone else is a spectator. */
+export function isEligibleToJoin(
+  joinPolicy: JoinPolicy,
+  whitelist: string[],
+  username: string,
+  isModerator: boolean,
+): boolean {
+  if (joinPolicy === 'open') return true
+  if (isModerator) return true
+  return whitelist.includes(username.toLowerCase())
 }
 
 /** A ship line's actual max hull, scaled from the shared 100-hull baseline. */

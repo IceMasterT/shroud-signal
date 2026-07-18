@@ -6,6 +6,7 @@ import {
   canClaimPresetSlot,
   canJoinLine,
   computeDamage,
+  isEligibleToJoin,
   maxHullFor,
   mineTriggeredBy,
   nearestAlly,
@@ -43,6 +44,22 @@ test('assignAutoTeam breaks ties toward team A', () => {
 
 test('assignAutoTeam ignores unassigned (null-team) players', () => {
   assert.equal(assignAutoTeam([{team: null}, {team: null}]), 'A')
+})
+
+test('isEligibleToJoin allows anyone when the policy is open', () => {
+  assert.equal(isEligibleToJoin('open', [], 'anyone', false), true)
+})
+
+test('isEligibleToJoin restricts to the whitelist (case-insensitive)', () => {
+  assert.equal(
+    isEligibleToJoin('whitelist', ['alice'], 'Alice', false),
+    true,
+  )
+  assert.equal(isEligibleToJoin('whitelist', ['alice'], 'bob', false), false)
+})
+
+test('isEligibleToJoin always allows moderators under a whitelist', () => {
+  assert.equal(isEligibleToJoin('whitelist', [], 'anymod', true), true)
 })
 
 test('maxHullFor scales the 100-hull baseline by the line hull multiplier', () => {
