@@ -427,6 +427,8 @@ export async function joinScrimmage(
     const players = await getMatchPlayers(matchId)
     team = assignAutoTeam(players)
   }
+  const mode = match.joinModeA ?? 'individual'
+  const presetId = match.presetIdA ?? null
   const player = await joinMatch(
     matchId,
     team,
@@ -434,8 +436,8 @@ export async function joinScrimmage(
     username,
     snoovatar,
     line,
-    'individual',
-    null,
+    mode,
+    presetId,
   )
   return {role: 'player', team: player.team ?? team}
 }

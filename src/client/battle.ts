@@ -859,6 +859,18 @@ function renderScrimmageJoinChoice(match: Match): string {
       </div>
     `
   }
+  if (match.joinModeA === 'preset' && match.presetIdA) {
+    const presetId = match.presetIdA
+    return `
+      <p>This scrimmage is committed to a squad preset:</p>
+      <div class="ship-picker">
+        <button class="preset-pick" data-preset="${presetId}">
+          <b>${PRESET_LABEL[presetId]}</b><br>
+          <small>${presetSlotSummary(presetId, match.playerCap)}</small>
+        </button>
+      </div>
+    `
+  }
   return `<div class="ship-picker">${shipPickerHtml()}</div>`
 }
 
@@ -933,6 +945,16 @@ function renderMatch(
           btn.addEventListener('click', () => {
             const line = btn.dataset.line as PlayerState['line']
             void joinScrimmageBattle(line, scrimmageTeamChoice)
+          })
+        }
+        for (const btn of document.querySelectorAll<HTMLButtonElement>(
+          '.preset-pick',
+        )) {
+          btn.addEventListener('click', () => {
+            const presetId = btn.dataset.preset as PresetId
+            const slots = SQUAD_PRESETS[presetId].slice(0, match.playerCap)
+            const line = slots[0]
+            if (line) void joinScrimmageBattle(line, scrimmageTeamChoice)
           })
         }
       } else {
