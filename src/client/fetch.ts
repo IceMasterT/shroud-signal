@@ -2,6 +2,8 @@ import {
   type ChallengeStateRsp,
   type CreateChallengeReq,
   type CreateChallengeRsp,
+  type CreateScrimmageReq,
+  type CreateScrimmageRsp,
   Endpoint,
   type ErrorRsp,
   type FireReq,
@@ -22,6 +24,8 @@ import {
   type RespondChallengeRsp,
   type ScoreReq,
   type ScoreRsp,
+  type ScrimmageJoinReq,
+  type ScrimmageJoinRsp,
   type SectorJoinReq,
   type SectorJoinRsp,
 } from '../shared/api.ts'
@@ -229,4 +233,22 @@ export function fetchMatchAbility(): Promise<MatchAbilityRsp | ErrorRsp> {
 
 export function fetchMatchState(): Promise<MatchStateRsp | ErrorRsp> {
   return getJsonOrError<MatchStateRsp>(Endpoint.MatchState)
+}
+
+export function fetchScrimmageCreate(
+  req: CreateScrimmageReq,
+): Promise<CreateScrimmageRsp | ErrorRsp> {
+  return postJsonOrError<CreateScrimmageReq, CreateScrimmageRsp>(
+    Endpoint.ScrimmageCreate,
+    req,
+  )
+}
+
+export function fetchScrimmageJoin(
+  req: ScrimmageJoinReq,
+): Promise<ScrimmageJoinRsp | ErrorRsp> {
+  return postJsonOrError<ScrimmageJoinReq, ScrimmageJoinRsp>(
+    Endpoint.ScrimmageJoin,
+    req,
+  )
 }
