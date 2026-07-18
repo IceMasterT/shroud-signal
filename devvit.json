@@ -14,6 +14,9 @@
       },
       "battle": {
         "entry": "battle.html"
+      },
+      "scrimmage": {
+        "entry": "scrimmage.html"
       }
     }
   },
@@ -39,6 +42,12 @@
         "description": "Challenge another subreddit to a Last One Standing battle.",
         "location": "subreddit",
         "endpoint": "/internal/on/menu/new-challenge"
+      },
+      {
+        "label": "Start a Scrimmage",
+        "description": "Set up a local practice battle for members of this subreddit.",
+        "location": "subreddit",
+        "endpoint": "/internal/on/menu/new-scrimmage"
       }
     ]
   },
