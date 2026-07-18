@@ -6,6 +6,7 @@ import type {
   PlayerState,
   PresetId,
   ShipLine,
+  SquadRule,
   Team,
   WeaponMode,
 } from '../shared/api.ts'
@@ -37,6 +38,7 @@ import {
 } from '../shared/api.ts'
 import {
   abilityReady,
+  assignAutoTeam,
   canClaimPresetSlot,
   canJoinLine,
   computeDamage,
@@ -229,6 +231,62 @@ export async function createMatch(challenge: Challenge): Promise<Match> {
   return match
 }
 
+const SCRIMMAGE_WARMUP_MINUTES = 2
+
+/**
+ * Creates the single arena post for a practice scrimmage. Unlike a
+ * cross-subreddit Challenge's two posts (one per subreddit), a scrimmage is
+ * single-subreddit, so both team join through the same post — arenaUrlA/B
+ * both point at it and are unused by the scrimmage client.
+ */
+export async function createScrimmage(
+  subredditName: string,
+  matchSize: '5v5' | '10v10',
+  squadRule: SquadRule,
+): Promise<Match> {
+  const matchId = randomId()
+  const playerCap = matchSize === '10v10' ? 10 : 5
+
+  const arena = await reddit.submitCustomPost({
+    subredditName,
+    title: `Practice Scrimmage (${matchSize}): Purple vs Orange`,
+    entry: 'battle',
+    postData: {kind: 'scrimmage', matchId},
+  })
+
+  const now = Date.now()
+  const match: Match = {
+    matchId,
+    arenaPostIdA: arena.id,
+    arenaPostIdB: arena.id,
+    arenaUrlA: arena.url,
+    arenaUrlB: arena.url,
+    subredditAName: subredditName,
+    subredditBName: subredditName,
+    playerCap,
+    warmupMinutes: SCRIMMAGE_WARMUP_MINUTES,
+    squadRule,
+    joinModeA: 'individual',
+    joinModeB: 'individual',
+    presetIdA: null,
+    presetIdB: null,
+    status: 'warmup',
+    round: 1,
+    roundWinsA: 0,
+    roundWinsB: 0,
+    survivalMsA: 0,
+    survivalMsB: 0,
+    warmupEndsAt: now + SCRIMMAGE_WARMUP_MINUTES * 60_000,
+    roundStartedAt: 0,
+    roundEndsAt: 0,
+    roundResultAt: 0,
+    lastRoundWinner: null,
+    winner: null,
+  }
+  await saveMatch(match)
+  return match
+}
+
 export async function joinMatch(
   matchId: string,
   side: Team,
@@ -317,6 +375,36 @@ export async function joinMatch(
   await redis.hSet(matchHullKey(matchId), {[userId]: String(maxHull)})
   await broadcastMatch(matchId, {type: 'roster', player})
   return player
+}
+
+/**
+ * Joins a scrimmage's auto-balanced team and delegates to joinMatch for the
+ * actual seat — joinMatch itself already handles the "already joined,
+ * return the existing seat" case, so a freshly-computed team here is safely
+ * ignored if the player is rejoining after a page refresh.
+ */
+export async function joinScrimmage(
+  matchId: string,
+  userId: string,
+  username: string,
+  snoovatar: string | undefined,
+  line: ShipLine,
+): Promise<{team: Team}> {
+  const match = await getMatch(matchId)
+  if (!match) throw new Error('match not found')
+  const players = await getMatchPlayers(matchId)
+  const team = assignAutoTeam(players)
+  const player = await joinMatch(
+    matchId,
+    team,
+    userId,
+    username,
+    snoovatar,
+    line,
+    'individual',
+    null,
+  )
+  return {team: player.team ?? team}
 }
 
 export async function movePlayerInMatch(
