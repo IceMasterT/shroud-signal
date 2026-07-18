@@ -530,11 +530,15 @@ async function routeScrimmageCreate(
   if (!SQUAD_RULES.includes(req.squadRule)) {
     return {error: 'invalid squad rule', status: 400}
   }
+  if (req.teamAssignMode !== 'auto' && req.teamAssignMode !== 'manual') {
+    return {error: 'invalid team assign mode', status: 400}
+  }
   try {
     const match = await createScrimmage(
       subredditName,
       req.matchSize,
       req.squadRule,
+      req.teamAssignMode,
     )
     return {matchId: match.matchId, arenaUrl: match.arenaUrlA}
   } catch (err) {
@@ -556,6 +560,9 @@ async function routeScrimmageJoin(
   if (!SHIP_LINES.includes(req.line)) {
     return {error: 'invalid ship line', status: 400}
   }
+  if (req.team !== null && req.team !== 'A' && req.team !== 'B') {
+    return {error: 'invalid team', status: 400}
+  }
   try {
     return await joinScrimmage(
       kind.matchId,
@@ -563,6 +570,7 @@ async function routeScrimmageJoin(
       username,
       context.snoovatar,
       req.line,
+      req.team,
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

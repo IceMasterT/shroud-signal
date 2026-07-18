@@ -8,6 +8,7 @@ import type {
   ShipLine,
   SquadRule,
   Team,
+  TeamAssignMode,
   WeaponMode,
 } from '../shared/api.ts'
 import {
@@ -246,6 +247,7 @@ export async function createScrimmage(
   subredditName: string,
   matchSize: '5v5' | '10v10',
   squadRule: SquadRule,
+  teamAssignMode: TeamAssignMode,
 ): Promise<Match> {
   const matchId = randomId()
   const playerCap = matchSize === '10v10' ? 10 : 5
@@ -269,6 +271,7 @@ export async function createScrimmage(
     playerCap,
     warmupMinutes: SCRIMMAGE_WARMUP_MINUTES,
     squadRule,
+    teamAssignMode,
     joinModeA: 'individual',
     joinModeB: 'individual',
     presetIdA: null,
@@ -392,11 +395,18 @@ export async function joinScrimmage(
   username: string,
   snoovatar: string | undefined,
   line: ShipLine,
+  requestedTeam: Team | null,
 ): Promise<{team: Team}> {
   const match = await getMatch(matchId)
   if (!match) throw new Error('match not found')
-  const players = await getMatchPlayers(matchId)
-  const team = assignAutoTeam(players)
+  let team: Team
+  if (match.teamAssignMode === 'manual') {
+    if (!requestedTeam) throw new Error('choose a team')
+    team = requestedTeam
+  } else {
+    const players = await getMatchPlayers(matchId)
+    team = assignAutoTeam(players)
+  }
   const player = await joinMatch(
     matchId,
     team,
