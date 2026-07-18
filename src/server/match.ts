@@ -1,6 +1,7 @@
 import {realtime, reddit, redis} from '@devvit/web/server'
 import type {
   Challenge,
+  JoinPolicy,
   Match,
   MatchMsg,
   PlayerState,
@@ -43,6 +44,7 @@ import {
   canClaimPresetSlot,
   canJoinLine,
   computeDamage,
+  isEligibleToJoin,
   type Mine,
   maxHullFor,
   mineTriggeredBy,
@@ -252,6 +254,8 @@ export async function createScrimmage(
   matchSize: '5v5' | '10v10',
   squadRule: SquadRule,
   teamAssignMode: TeamAssignMode,
+  joinPolicy: JoinPolicy,
+  whitelist: string[],
 ): Promise<Match> {
   const matchId = randomId()
   const playerCap = matchSize === '10v10' ? 10 : 5
@@ -276,6 +280,8 @@ export async function createScrimmage(
     warmupMinutes: SCRIMMAGE_WARMUP_MINUTES,
     squadRule,
     teamAssignMode,
+    joinPolicy,
+    whitelist,
     joinModeA: 'individual',
     joinModeB: 'individual',
     presetIdA: null,
@@ -400,9 +406,15 @@ export async function joinScrimmage(
   snoovatar: string | undefined,
   line: ShipLine,
   requestedTeam: Team | null,
-): Promise<{team: Team}> {
+  isModerator: boolean,
+): Promise<{role: 'player'; team: Team} | {role: 'spectator'}> {
   const match = await getMatch(matchId)
   if (!match) throw new Error('match not found')
+  if (
+    !isEligibleToJoin(match.joinPolicy, match.whitelist, username, isModerator)
+  ) {
+    return {role: 'spectator'}
+  }
   let team: Team
   if (match.teamAssignMode === 'manual') {
     if (!requestedTeam) throw new Error('choose a team')
@@ -421,7 +433,7 @@ export async function joinScrimmage(
     'individual',
     null,
   )
-  return {team: player.team ?? team}
+  return {role: 'player', team: player.team ?? team}
 }
 
 export async function movePlayerInMatch(

@@ -43,6 +43,7 @@ import {
   SQUAD_RULES,
   WEAPON_MODES,
 } from '../shared/api.ts'
+import {isEligibleToJoin} from './abilities.ts'
 import {
   clampPlayerCap,
   clampWarmupMinutes,
@@ -496,7 +497,8 @@ async function routeMatchAbility(): Promise<MatchAbilityRsp | ErrorRsp> {
 
 async function routeMatchState(): Promise<MatchStateRsp | ErrorRsp> {
   const userId = context.userId
-  const matchId = matchIdFromKind(getPostKind())
+  const kind = getPostKind()
+  const matchId = matchIdFromKind(kind)
   if (!matchId)
     return {error: 'not a match arena or scrimmage post', status: 400}
   let match = await getMatch(matchId)
@@ -506,12 +508,31 @@ async function routeMatchState(): Promise<MatchStateRsp | ErrorRsp> {
   const rosterA = players.filter(p => p.team === 'A')
   const rosterB = players.filter(p => p.team === 'B')
   const self = players.find(p => p.userId === userId) ?? null
+  let spectator = false
+  if (!self && kind?.kind === 'scrimmage' && context.username) {
+    spectator = !isEligibleToJoin(
+      match.joinPolicy,
+      match.whitelist,
+      context.username,
+      await isRequesterModerator(),
+    )
+  }
   return {
     match,
     self,
     rosterA,
     rosterB,
+    spectator,
   }
+}
+
+async function isRequesterModerator(): Promise<boolean> {
+  const subredditName = context.subredditName
+  if (!subredditName) return false
+  const user = await reddit.getCurrentUser()
+  if (!user) return false
+  const perms = await user.getModPermissionsForSubreddit(subredditName)
+  return perms.length > 0
 }
 
 async function routeScrimmageCreate(
@@ -533,12 +554,17 @@ async function routeScrimmageCreate(
   if (req.teamAssignMode !== 'auto' && req.teamAssignMode !== 'manual') {
     return {error: 'invalid team assign mode', status: 400}
   }
+  if (req.joinPolicy !== 'open' && req.joinPolicy !== 'whitelist') {
+    return {error: 'invalid join policy', status: 400}
+  }
   try {
     const match = await createScrimmage(
       subredditName,
       req.matchSize,
       req.squadRule,
       req.teamAssignMode,
+      req.joinPolicy,
+      req.whitelist.map(u => u.toLowerCase()),
     )
     return {matchId: match.matchId, arenaUrl: match.arenaUrlA}
   } catch (err) {
@@ -571,6 +597,7 @@ async function routeScrimmageJoin(
       context.snoovatar,
       req.line,
       req.team,
+      await isRequesterModerator(),
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

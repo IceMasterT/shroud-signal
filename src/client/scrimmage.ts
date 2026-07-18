@@ -50,6 +50,19 @@ async function runSetup(): Promise<void> {
         label: 'Custom squad rule (no 2-per-line cap)',
         defaultValue: false,
       },
+      {
+        type: 'boolean',
+        name: 'whitelistOnly',
+        label: 'Restrict to a whitelist (everyone else spectates)',
+        defaultValue: false,
+      },
+      {
+        type: 'paragraph',
+        name: 'whitelist',
+        label:
+          'Whitelisted usernames (one per line, only used if restricted above)',
+        required: false,
+      },
     ],
   })
   if (result.action !== 'SUBMITTED') {
@@ -64,10 +77,16 @@ async function runSetup(): Promise<void> {
   const matchSize = result.values.matchSize?.[0] === '10v10' ? '10v10' : '5v5'
   const teamAssignMode =
     result.values.teamAssignMode?.[0] === 'manual' ? 'manual' : 'auto'
+  const whitelist = (result.values.whitelist ?? '')
+    .split('\n')
+    .map(u => u.trim())
+    .filter(u => u.length > 0)
   const rsp = await fetchScrimmageCreate({
     matchSize,
     squadRule: result.values.customSquadRule ? 'custom' : 'capped',
     teamAssignMode,
+    joinPolicy: result.values.whitelistOnly ? 'whitelist' : 'open',
+    whitelist,
   })
   if (isErrorRsp(rsp)) {
     render(
