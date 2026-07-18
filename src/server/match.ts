@@ -214,6 +214,10 @@ export async function createMatch(challenge: Challenge): Promise<Match> {
     // Cross-subreddit Challenges never offer a team-pick choice — team is
     // always "which subreddit you're on" — so this is a fixed, unused default.
     teamAssignMode: 'auto',
+    // Cross-subreddit Challenges are always open, whitelist-free — anyone
+    // who lands on the right subreddit's arena post may join.
+    joinPolicy: 'open',
+    whitelist: [],
     joinModeA: null,
     joinModeB: null,
     presetIdA: null,

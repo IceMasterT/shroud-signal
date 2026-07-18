@@ -249,6 +249,9 @@ export const SQUAD_RULES: readonly SquadRule[] = ['capped', 'custom']
 /** Scrimmage-only: whether players pick their own team or the server auto-balances them. Cross-subreddit Challenge matches don't use this — team is always "which subreddit's post you're on" for those. */
 export type TeamAssignMode = 'auto' | 'manual'
 
+/** Scrimmage-only: 'open' is first-come-first-served (anyone may join a team); 'whitelist' restricts play to listed usernames (plus moderators) — everyone else becomes a spectator. */
+export type JoinPolicy = 'open' | 'whitelist'
+
 export type ChallengeStatus =
   | 'pending'
   | 'countered'
@@ -328,6 +331,8 @@ export type Match = {
   warmupMinutes: number
   squadRule: SquadRule
   teamAssignMode: TeamAssignMode
+  joinPolicy: JoinPolicy
+  whitelist: string[]
   joinModeA: 'individual' | 'preset' | null
   joinModeB: 'individual' | 'preset' | null
   presetIdA: PresetId | null
@@ -351,6 +356,8 @@ export type MatchStateRsp = {
   self: PlayerState | null
   rosterA: PlayerState[]
   rosterB: PlayerState[]
+  /** True only when this is a whitelist-restricted scrimmage, self is null, and the requester isn't eligible to join a team. Always false for match-arena posts. */
+  spectator: boolean
 }
 export type JoinMatchReq = {
   line: ShipLine
@@ -370,11 +377,13 @@ export type CreateScrimmageReq = {
   matchSize: '5v5' | '10v10'
   squadRule: SquadRule
   teamAssignMode: TeamAssignMode
+  joinPolicy: JoinPolicy
+  whitelist: string[]
 }
 export type CreateScrimmageRsp = {matchId: string; arenaUrl: string}
 
 export type ScrimmageJoinReq = {line: ShipLine; team: Team | null}
-export type ScrimmageJoinRsp = {team: Team}
+export type ScrimmageJoinRsp = {role: 'player'; team: Team} | {role: 'spectator'}
 
 /** Broadcast on a match's own realtime channel (`match:{matchId}`), separate from a free-play sector's channel. */
 export type MatchMsg =
