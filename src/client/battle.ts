@@ -410,6 +410,16 @@ class BattleScene extends Phaser.Scene {
     for (const p of others) this.spawnRemote(p)
   }
 
+  /** No ship, no controls — the camera sits at the default center (roughly between the two spawn clusters) and every ship is drawn exactly as spawnRemote already draws them for everyone else's screen. */
+  resetSpectatorView(others: PlayerState[]): void {
+    for (const r of this.others.values()) r.container.destroy()
+    this.others.clear()
+    for (const m of this.mines.values()) m.destroy()
+    this.mines.clear()
+    for (const p of others) this.spawnRemote(p)
+    this.updateHud()
+  }
+
   /** Draws any instant hit-scan weapon's beam — laser, autocannon, burst, plasma, or flak. */
   fireHitscanBeam(
     x: number,
@@ -787,6 +797,7 @@ let lastRound = 0
 let mySide: Team = 'A'
 let isScrimmage = false
 let scrimmageTeamChoice: Team | null = null
+let isSpectator = false
 
 function rosterList(players: PlayerState[], cap: number): string {
   const names = players.map(p => escapeHtml(p.username)).join(', ') || '(empty)'
@@ -899,10 +910,10 @@ function renderMatch(
           <div class="roster">TEAM ${teamLabel('A', isScrimmage).toUpperCase()}<br>${rosterList(rosterA, match.playerCap)}</div>
           <div class="roster">TEAM ${teamLabel('B', isScrimmage).toUpperCase()}<br>${rosterList(rosterB, match.playerCap)}</div>
         </div>
-        ${self ? '<p>You are in. Waiting for the round to start…</p>' : isScrimmage ? renderScrimmageJoinChoice(match) : renderJoinChoice(match)}
+        ${self ? '<p>You are in. Waiting for the round to start…</p>' : isSpectator ? "<p>This scrimmage is whitelist-only and you're not on the list — you can spectate the battle live.</p>" : isScrimmage ? renderScrimmageJoinChoice(match) : renderJoinChoice(match)}
       </div>
     `)
-    if (!self) {
+    if (!self && !isSpectator) {
       if (isScrimmage) {
         document
           .getElementById('pick-purple')
@@ -951,14 +962,18 @@ function renderMatch(
   if (match.status === 'round_active') {
     hideOverlay()
     if (!scene) return
-    if (
-      self &&
-      (!scene.self ||
+    if (self) {
+      if (
+        !scene.self ||
         scene.self.userId !== self.userId ||
-        match.round !== lastRound)
-    ) {
+        match.round !== lastRound
+      ) {
+        lastRound = match.round
+        scene.resetForNewRound(self, [...rosterA, ...rosterB])
+      }
+    } else if (isSpectator && match.round !== lastRound) {
       lastRound = match.round
-      scene.resetForNewRound(self, [...rosterA, ...rosterB])
+      scene.resetSpectatorView([...rosterA, ...rosterB])
     }
     return
   }
@@ -1002,6 +1017,7 @@ async function poll(): Promise<void> {
     )
     return
   }
+  isSpectator = rsp.spectator
   renderMatch(rsp.match, rsp.self, rsp.rosterA, rsp.rosterB)
 }
 
