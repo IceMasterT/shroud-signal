@@ -19,6 +19,17 @@ export function canJoinLine(
   return teammates.filter(p => p.line === line).length < 2
 }
 
+/**
+ * Auto-balances a new scrimmage joiner onto whichever team currently has
+ * fewer players. Ties go to team A — deterministic, not random, so
+ * auto-assign stays reproducible for testing and doesn't need a seeded RNG.
+ */
+export function assignAutoTeam(players: Pick<PlayerState, 'team'>[]): Team {
+  const countA = players.filter(p => p.team === 'A').length
+  const countB = players.filter(p => p.team === 'B').length
+  return countA <= countB ? 'A' : 'B'
+}
+
 /** A ship line's actual max hull, scaled from the shared 100-hull baseline. */
 export function maxHullFor(line: ShipLine): number {
   return Math.round(START_HULL * SHIP_STATS[line].hullMul)

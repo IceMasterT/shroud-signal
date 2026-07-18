@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {test} from 'node:test'
 import {
   abilityReady,
+  assignAutoTeam,
   canClaimPresetSlot,
   canJoinLine,
   computeDamage,
@@ -25,6 +26,23 @@ test('canJoinLine ignores other lines on the team', () => {
     canJoinLine([{line: 'fighter'}, {line: 'fighter'}], 'tender'),
     true,
   )
+})
+
+test('assignAutoTeam picks the team with fewer players', () => {
+  assert.equal(assignAutoTeam([]), 'A')
+  assert.equal(assignAutoTeam([{team: 'A'}]), 'B')
+  assert.equal(assignAutoTeam([{team: 'A'}, {team: 'B'}, {team: 'B'}]), 'A')
+})
+
+test('assignAutoTeam breaks ties toward team A', () => {
+  assert.equal(
+    assignAutoTeam([{team: 'A'}, {team: 'B'}, {team: 'A'}, {team: 'B'}]),
+    'A',
+  )
+})
+
+test('assignAutoTeam ignores unassigned (null-team) players', () => {
+  assert.equal(assignAutoTeam([{team: null}, {team: null}]), 'A')
 })
 
 test('maxHullFor scales the 100-hull baseline by the line hull multiplier', () => {
