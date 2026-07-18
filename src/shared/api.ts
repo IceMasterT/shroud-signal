@@ -383,7 +383,9 @@ export type CreateScrimmageReq = {
 export type CreateScrimmageRsp = {matchId: string; arenaUrl: string}
 
 export type ScrimmageJoinReq = {line: ShipLine; team: Team | null}
-export type ScrimmageJoinRsp = {role: 'player'; team: Team} | {role: 'spectator'}
+export type ScrimmageJoinRsp =
+  | {role: 'player'; team: Team}
+  | {role: 'spectator'}
 
 /** Broadcast on a match's own realtime channel (`match:{matchId}`), separate from a free-play sector's channel. */
 export type MatchMsg =
