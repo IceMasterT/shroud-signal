@@ -11,6 +11,8 @@ import {
   type ChallengeStateRsp,
   type CreateChallengeReq,
   type CreateChallengeRsp,
+  type CreateScrimmageReq,
+  type CreateScrimmageRsp,
   Endpoint,
   EndpointMethod,
   type ErrorRsp,
@@ -32,6 +34,8 @@ import {
   type RespondChallengeRsp,
   type ScoreReq,
   type ScoreRsp,
+  type ScrimmageJoinReq,
+  type ScrimmageJoinRsp,
   type SectorJoinReq,
   type SectorJoinRsp,
   SHIP_LINES,
@@ -50,10 +54,12 @@ import {dbGetCounter, dbIncCounter} from './db.ts'
 import {randomPulseLine} from './lore.ts'
 import {
   activateAbility,
+  createScrimmage,
   fireWeaponInMatch,
   getMatch,
   getMatchPlayers,
   joinMatch,
+  joinScrimmage,
   movePlayerInMatch,
   tickMatch,
 } from './match.ts'
@@ -87,6 +93,8 @@ type AnyRsp =
   | JoinMatchRsp
   | MatchAbilityRsp
   | MatchStateRsp
+  | CreateScrimmageRsp
+  | ScrimmageJoinRsp
   | UiResponse
   | TriggerResponse
   | ErrorRsp
@@ -96,6 +104,13 @@ function getPostKind(): PostKind | undefined {
   const data = context.postData
   if (!data || typeof data.kind !== 'string') return undefined
   return data as unknown as PostKind
+}
+
+/** A match-arena and a scrimmage both play through match.ts's shared round engine — this is the one place that needs to treat them interchangeably. */
+function matchIdFromKind(kind: PostKind | undefined): string | undefined {
+  if (kind?.kind === 'match-arena' || kind?.kind === 'scrimmage')
+    return kind.matchId
+  return undefined
 }
 
 export async function onReq(
@@ -168,11 +183,20 @@ async function route(
       case Endpoint.MatchState:
         rsp = await routeMatchState()
         break
+      case Endpoint.ScrimmageCreate:
+        rsp = await routeScrimmageCreate(reqMsg)
+        break
+      case Endpoint.ScrimmageJoin:
+        rsp = await routeScrimmageJoin(reqMsg)
+        break
       case Endpoint.OnMenuNewPost:
         rsp = await routeMenuNewPost()
         break
       case Endpoint.OnMenuNewChallenge:
         rsp = await routeMenuNewChallenge()
+        break
+      case Endpoint.OnMenuNewScrimmage:
+        rsp = await routeMenuNewScrimmage()
         break
       case Endpoint.OnAppInstall:
         rsp = await routeAppInstall()
@@ -251,8 +275,9 @@ async function routeMove(reqMsg: IncomingMessage): Promise<MoveRsp | ErrorRsp> {
     return {error: 'invalid move payload', status: 400}
   }
   const kind = getPostKind()
-  if (kind?.kind === 'match-arena') {
-    await movePlayerInMatch(kind.matchId, userId, req.x, req.y, req.rotation)
+  const matchId = matchIdFromKind(kind)
+  if (matchId) {
+    await movePlayerInMatch(matchId, userId, req.x, req.y, req.rotation)
   } else {
     await movePlayer(postId, userId, req.x, req.y, req.rotation)
   }
@@ -302,8 +327,9 @@ async function routeFire(reqMsg: IncomingMessage): Promise<FireRsp | ErrorRsp> {
     return {error: 'invalid fire mode', status: 400}
   }
   const kind = getPostKind()
-  if (kind?.kind === 'match-arena') {
-    await fireWeaponInMatch(kind.matchId, userId, req.mode)
+  const matchId = matchIdFromKind(kind)
+  if (matchId) {
+    await fireWeaponInMatch(matchId, userId, req.mode)
   } else {
     // Free-play sectors only ever have plain laser + torpedo — the newer
     // battle-arena-only weapons (autocannon/burst/plasma/flak) don't apply here.
@@ -456,11 +482,11 @@ async function routeMatchJoin(
 async function routeMatchAbility(): Promise<MatchAbilityRsp | ErrorRsp> {
   const userId = context.userId
   if (!userId) return {error: 'must be logged in', status: 401}
-  const kind = getPostKind()
-  if (kind?.kind !== 'match-arena')
-    return {error: 'not a match arena post', status: 400}
+  const matchId = matchIdFromKind(getPostKind())
+  if (!matchId)
+    return {error: 'not a match arena or scrimmage post', status: 400}
   try {
-    await activateAbility(kind.matchId, userId)
+    await activateAbility(matchId, userId)
     return {ok: true}
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -470,13 +496,13 @@ async function routeMatchAbility(): Promise<MatchAbilityRsp | ErrorRsp> {
 
 async function routeMatchState(): Promise<MatchStateRsp | ErrorRsp> {
   const userId = context.userId
-  const kind = getPostKind()
-  if (kind?.kind !== 'match-arena')
-    return {error: 'not a match arena post', status: 400}
-  let match = await getMatch(kind.matchId)
+  const matchId = matchIdFromKind(getPostKind())
+  if (!matchId)
+    return {error: 'not a match arena or scrimmage post', status: 400}
+  let match = await getMatch(matchId)
   if (!match) return {error: 'match not found', status: 404}
   match = await tickMatch(match)
-  const players = await getMatchPlayers(kind.matchId)
+  const players = await getMatchPlayers(matchId)
   const rosterA = players.filter(p => p.team === 'A')
   const rosterB = players.filter(p => p.team === 'B')
   const self = players.find(p => p.userId === userId) ?? null
@@ -485,6 +511,57 @@ async function routeMatchState(): Promise<MatchStateRsp | ErrorRsp> {
     self,
     rosterA,
     rosterB,
+  }
+}
+
+async function routeScrimmageCreate(
+  reqMsg: IncomingMessage,
+): Promise<CreateScrimmageRsp | ErrorRsp> {
+  const subredditName = context.subredditName
+  if (!subredditName) return {error: 'no subreddit', status: 400}
+  const kind = getPostKind()
+  if (kind?.kind !== 'scrimmage-setup') {
+    return {error: 'not a scrimmage setup post', status: 400}
+  }
+  const req = await readJson<CreateScrimmageReq>(reqMsg)
+  if (req.matchSize !== '5v5' && req.matchSize !== '10v10') {
+    return {error: 'invalid match size', status: 400}
+  }
+  if (!SQUAD_RULES.includes(req.squadRule)) {
+    return {error: 'invalid squad rule', status: 400}
+  }
+  const match = await createScrimmage(
+    subredditName,
+    req.matchSize,
+    req.squadRule,
+  )
+  return {matchId: match.matchId, arenaUrl: match.arenaUrlA}
+}
+
+async function routeScrimmageJoin(
+  reqMsg: IncomingMessage,
+): Promise<ScrimmageJoinRsp | ErrorRsp> {
+  const userId = context.userId
+  const username = context.username ?? 'anonymous'
+  if (!userId) return {error: 'must be logged in', status: 401}
+  const kind = getPostKind()
+  if (kind?.kind !== 'scrimmage')
+    return {error: 'not a scrimmage post', status: 400}
+  const req = await readJson<ScrimmageJoinReq>(reqMsg)
+  if (!SHIP_LINES.includes(req.line)) {
+    return {error: 'invalid ship line', status: 400}
+  }
+  try {
+    return await joinScrimmage(
+      kind.matchId,
+      userId,
+      username,
+      context.snoovatar,
+      req.line,
+    )
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {error: msg, status: 400}
   }
 }
 
@@ -509,6 +586,18 @@ async function routeMenuNewChallenge(): Promise<UiResponse> {
   })
   return {
     showToast: {text: 'Set up your challenge!', appearance: 'success'},
+    navigateTo: post.url,
+  }
+}
+
+async function routeMenuNewScrimmage(): Promise<UiResponse> {
+  const post = await reddit.submitCustomPost({
+    title: 'Set up a scrimmage',
+    entry: 'scrimmage',
+    postData: {kind: 'scrimmage-setup'},
+  })
+  return {
+    showToast: {text: 'Set up your scrimmage!', appearance: 'success'},
     navigateTo: post.url,
   }
 }
