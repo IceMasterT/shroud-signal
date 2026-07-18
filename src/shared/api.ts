@@ -379,6 +379,7 @@ export type CreateScrimmageReq = {
   teamAssignMode: TeamAssignMode
   joinPolicy: JoinPolicy
   whitelist: string[]
+  presetId: PresetId | null
 }
 export type CreateScrimmageRsp = {matchId: string; arenaUrl: string}
 

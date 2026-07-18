@@ -256,6 +256,7 @@ export async function createScrimmage(
   teamAssignMode: TeamAssignMode,
   joinPolicy: JoinPolicy,
   whitelist: string[],
+  presetId: PresetId | null,
 ): Promise<Match> {
   const matchId = randomId()
   const playerCap = matchSize === '10v10' ? 10 : 5
@@ -282,10 +283,13 @@ export async function createScrimmage(
     teamAssignMode,
     joinPolicy,
     whitelist,
-    joinModeA: 'individual',
-    joinModeB: 'individual',
-    presetIdA: null,
-    presetIdB: null,
+    // A preset, if chosen, is forced match-wide — there's no per-team
+    // negotiation like a Challenge-born match has, since the mod already
+    // decided this at scrimmage-creation time.
+    joinModeA: presetId ? 'preset' : 'individual',
+    joinModeB: presetId ? 'preset' : 'individual',
+    presetIdA: presetId,
+    presetIdB: presetId,
     status: 'warmup',
     round: 1,
     roundWinsA: 0,

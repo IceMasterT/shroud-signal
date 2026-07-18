@@ -557,6 +557,9 @@ async function routeScrimmageCreate(
   if (req.joinPolicy !== 'open' && req.joinPolicy !== 'whitelist') {
     return {error: 'invalid join policy', status: 400}
   }
+  if (req.presetId !== null && !(req.presetId in SQUAD_PRESETS)) {
+    return {error: 'invalid preset', status: 400}
+  }
   try {
     const match = await createScrimmage(
       subredditName,
@@ -565,6 +568,7 @@ async function routeScrimmageCreate(
       req.teamAssignMode,
       req.joinPolicy,
       req.whitelist.map(u => u.toLowerCase()),
+      req.presetId,
     )
     return {matchId: match.matchId, arenaUrl: match.arenaUrlA}
   } catch (err) {

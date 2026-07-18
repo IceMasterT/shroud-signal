@@ -1,4 +1,5 @@
 import {showForm} from '@devvit/web/client'
+import type {PresetId} from '../shared/api.ts'
 import {fetchScrimmageCreate, isErrorRsp} from './fetch.ts'
 
 const rootEl = document.getElementById('root')
@@ -45,9 +46,32 @@ async function runSetup(): Promise<void> {
         defaultValue: ['auto'],
       },
       {
+        type: 'select',
+        name: 'squadMode',
+        label: 'Squad composition',
+        options: [
+          {label: 'Individual picks', value: 'individual'},
+          {label: 'Curated preset (forced match-wide)', value: 'preset'},
+        ],
+        defaultValue: ['individual'],
+      },
+      {
+        type: 'select',
+        name: 'presetId',
+        label: 'Preset (only used if "Curated preset" is chosen above)',
+        options: [
+          {label: 'Balanced Wing', value: 'balanced'},
+          {label: 'Aggro Rush', value: 'aggro'},
+          {label: 'Turtle Wall', value: 'turtle'},
+          {label: 'Recon Strike', value: 'recon'},
+        ],
+        defaultValue: ['balanced'],
+      },
+      {
         type: 'boolean',
         name: 'customSquadRule',
-        label: 'Custom squad rule (no 2-per-line cap)',
+        label:
+          'Custom squad rule (no 2-per-line cap, ignored if using a preset)',
         defaultValue: false,
       },
       {
@@ -81,12 +105,17 @@ async function runSetup(): Promise<void> {
     .split('\n')
     .map(u => u.trim())
     .filter(u => u.length > 0)
+  const presetId =
+    result.values.squadMode?.[0] === 'preset'
+      ? ((result.values.presetId?.[0] ?? 'balanced') as PresetId)
+      : null
   const rsp = await fetchScrimmageCreate({
     matchSize,
     squadRule: result.values.customSquadRule ? 'custom' : 'capped',
     teamAssignMode,
     joinPolicy: result.values.whitelistOnly ? 'whitelist' : 'open',
     whitelist,
+    presetId,
   })
   if (isErrorRsp(rsp)) {
     render(
