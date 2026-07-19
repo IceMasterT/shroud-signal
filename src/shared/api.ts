@@ -39,13 +39,13 @@ export const TORPEDO_COOLDOWN_MS = 900
 export const MISSILE_SPEED = 420 // world units/sec
 export const MISSILE_COOLDOWN_MS = 1800
 export const AUTOCANNON_RANGE = 400
-export const AUTOCANNON_COOLDOWN_MS = 200
+export const AUTOCANNON_COOLDOWN_MS = 230
 export const BURST_RANGE = 340
 export const BURST_COOLDOWN_MS = 500
 export const PLASMA_RANGE = 440
 export const PLASMA_COOLDOWN_MS = 650
 export const FLAK_RANGE = 260
-export const FLAK_COOLDOWN_MS = 700
+export const FLAK_COOLDOWN_MS = 600
 /** How close an enemy torpedo must be to a Tender for its Flak Battery to shoot it down instead of firing its shotgun. */
 export const FLAK_INTERCEPT_RANGE = 260
 
@@ -144,7 +144,7 @@ export const SQUAD_PRESETS: Record<PresetId, ShipLine[]> = {
 /** Per-line active-ability tuning, battle arenas only. */
 export const ABILITY_COOLDOWN_MS: Record<ShipLine, number> = {
   fighter: 20000,
-  miner: 12000,
+  miner: 16000,
   transport: 18000,
   pathfinder: 15000,
   tender: 15000,
@@ -154,7 +154,7 @@ export const OVERCHARGE_DAMAGE_MUL = 1.5
 export const BULWARK_DURATION_MS = 4000
 export const BULWARK_DAMAGE_MUL = 0.6
 export const RADAR_PING_DURATION_MS = 6000
-export const TENDER_HEAL_AMOUNT = 35
+export const TENDER_HEAL_AMOUNT = 45
 export const TENDER_HEAL_RANGE = 300
 
 /** A player's live state within one sector (post). `team` is only set in a match arena. */
