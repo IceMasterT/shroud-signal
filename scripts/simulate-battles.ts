@@ -559,7 +559,7 @@ console.log(
 const randomStats = freshStats()
 let errors = 0
 const anomalies: string[] = []
-const N_RANDOM = 20
+const N_RANDOM = 50
 for (let i = 0; i < N_RANDOM; i++) {
   try {
     const compA = randomComposition(PLAYER_CAP, true)
