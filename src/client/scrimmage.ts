@@ -1,4 +1,4 @@
-import {showForm} from '@devvit/web/client'
+import {navigateTo, showForm} from '@devvit/web/client'
 import type {PresetId} from '../shared/api.ts'
 import {fetchScrimmageCreate, isErrorRsp} from './fetch.ts'
 
@@ -130,9 +130,12 @@ async function runSetup(): Promise<void> {
     <div class="panel">
       <h1>Scrimmage created!</h1>
       <p>Purple vs Orange, <span class="stat">${escapeHtml(matchSize)}</span>.</p>
-      <a class="enter" href="${escapeHtml(rsp.arenaUrl)}"><button>Enter the arena</button></a>
+      <button id="enter">Enter the arena</button>
     </div>
   `)
+  document
+    .getElementById('enter')
+    ?.addEventListener('click', () => navigateTo(rsp.arenaUrl))
 }
 
 void runSetup()

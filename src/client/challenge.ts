@@ -1,4 +1,4 @@
-import {context, showForm} from '@devvit/web/client'
+import {context, navigateTo, showForm} from '@devvit/web/client'
 import type {Challenge, PostKind} from '../shared/api.ts'
 import {
   fetchChallengeCreate,
@@ -141,9 +141,14 @@ function renderChallenge(
       <div class="panel">
         <h1>Battle accepted!</h1>
         <p>r/${escapeHtml(challenge.challengerSubredditName)} vs r/${escapeHtml(challenge.targetSubredditName)}. <span class="stat">${cap}</span> per team, <span class="stat">${warmup}</span> min warm-up, squad rule <span class="stat">${ruleLabel(challenge.squadRule)}</span>.</p>
-        ${url ? `<a class="enter" href="${escapeHtml(url)}"><button>Enter your arena</button></a>` : ''}
+        ${url ? '<button id="enter">Enter your arena</button>' : ''}
       </div>
     `)
+    if (url) {
+      document
+        .getElementById('enter')
+        ?.addEventListener('click', () => navigateTo(url))
+    }
     return
   }
 
