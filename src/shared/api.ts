@@ -314,9 +314,9 @@ export type MatchStatus =
   | 'round_result'
   | 'complete'
 
-/** Shared by client and server so both agree on the realtime channel name for a match. */
+/** Shared by client and server so both agree on the realtime channel name for a match. Devvit realtime channel names may only contain letters, numbers, and underscores -- no colons. */
 export function matchChannel(matchId: string): string {
-  return `match:${matchId}`
+  return `match_${matchId}`
 }
 
 export type Match = {

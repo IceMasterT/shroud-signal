@@ -26,8 +26,9 @@ const TORPEDO_DAMAGE = 55
 const TORPEDO_IMPACT_RADIUS = 100 // how far off the flight line a target may be and still be caught
 const TORPEDO_AIM_HALF_ANGLE = 0.4
 
+/** Devvit realtime channel names may only contain letters, numbers, and underscores -- no colons. */
 export function sectorChannel(postId: string): string {
-  return `sector:${postId}`
+  return `sector_${postId}`
 }
 
 function playersKey(postId: string): string {
