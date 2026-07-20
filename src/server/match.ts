@@ -816,7 +816,7 @@ async function applyDamageInMatch(
   }
 }
 
-export async function startRound(match: Match): Promise<Match> {
+async function startRound(match: Match): Promise<Match> {
   const players = await getMatchPlayers(match.matchId)
   await redis.del(matchEliminatedKey(match.matchId))
   await redis.del(matchMinesKey(match.matchId))
@@ -844,6 +844,23 @@ export async function startRound(match: Match): Promise<Match> {
   await saveMatch(match)
   await broadcastMatch(match.matchId, {type: 'round_start', round: match.round})
   return match
+}
+
+/** A joined player skipping the rest of warm-up — same round-start engine as the automatic warmup-elapsed/roster-full transition, but only a player already on the roster may trigger it early. */
+export async function requestEarlyStart(
+  matchId: string,
+  userId: string,
+): Promise<void> {
+  const match = await getMatch(matchId)
+  if (!match) throw new Error('match not found')
+  if (match.status !== 'warmup') {
+    throw new Error('match already started or finished')
+  }
+  const existing = await redis.hGet(matchPlayersKey(matchId), userId)
+  if (!existing) throw new Error('only a joined player can start the match')
+  const players = await getMatchPlayers(matchId)
+  if (players.length === 0) throw new Error('no players have joined yet')
+  await startRound(match)
 }
 
 /** The elapsed ms from round start to the last elimination on `team`, or undefined if the team was never fully wiped this round (or has no players). */

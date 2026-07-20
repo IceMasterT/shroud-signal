@@ -62,7 +62,7 @@ import {
   joinMatch,
   joinScrimmage,
   movePlayerInMatch,
-  startRound,
+  requestEarlyStart,
   tickMatch,
 } from './match.ts'
 import {
@@ -502,20 +502,16 @@ async function routeMatchAbility(): Promise<MatchAbilityRsp | ErrorRsp> {
 async function routeMatchStart(): Promise<{ok: true} | ErrorRsp> {
   const userId = context.userId
   if (!userId) return {error: 'must be logged in', status: 401}
-  const kind = getPostKind()
-  const matchId = matchIdFromKind(kind)
+  const matchId = matchIdFromKind(getPostKind())
   if (!matchId)
     return {error: 'not a match arena or scrimmage post', status: 400}
-  const match = await getMatch(matchId)
-  if (!match) return {error: 'match not found', status: 404}
-  if (match.status !== 'warmup')
-    return {error: 'match already started or finished', status: 400}
-  const players = await getMatchPlayers(matchId)
-  if (players.length === 0) {
-    return {error: 'no players have joined yet', status: 400}
+  try {
+    await requestEarlyStart(matchId, userId)
+    return {ok: true}
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {error: msg, status: 400}
   }
-  await startRound(match)
-  return {ok: true}
 }
 
 async function routeMatchState(): Promise<MatchStateRsp | ErrorRsp> {
