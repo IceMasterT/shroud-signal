@@ -151,8 +151,7 @@ function shipPickerHtml(): string {
         <span class="stat">SPD ${Math.round(SHIP_STATS[line].speedMul * 100)}%</span>
         <span class="stat">HULL ${Math.round(SHIP_STATS[line].hullMul * 100)}%</span>
         <span class="stat">DMG ${Math.round(SHIP_STATS[line].dmgMul * 100)}%</span><br>
-        <small>${WEAPON_LABEL[line]}</small><br>
-        <small>${ABILITY_BLURB[line]}</small>
+        <small>${WEAPON_LABEL[line]} — ${ABILITY_BLURB[line]}</small>
       </button>`,
   ).join('')
 }

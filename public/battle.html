@@ -41,6 +41,9 @@
       text-align: center;
       max-width: 460px;
       width: 100%;
+      max-height: 92dvh;
+      overflow-y: auto;
+      box-sizing: border-box;
     }
     h1 {
       font-size: 15px;
@@ -87,19 +90,25 @@
     .ship-picker {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 0.5rem;
+      gap: 0.35rem;
     }
     .ship-pick {
       display: block;
       text-align: left;
+      font-size: 10px;
+      line-height: 1.25;
+      padding: 0.4rem 0.5rem;
+    }
+    .ship-pick b {
       font-size: 11px;
-      line-height: 1.4;
     }
     .ship-pick small {
+      display: block;
       color: #9fb4c9;
-      font-size: 10px;
+      font-size: 9px;
       text-transform: none;
       letter-spacing: normal;
+      white-space: normal;
     }
     .preset-pick {
       display: block;
