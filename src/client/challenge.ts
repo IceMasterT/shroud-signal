@@ -25,6 +25,17 @@ function escapeHtml(s: string): string {
   )
 }
 
+function safeNavigateTo(url: string): void {
+  try {
+    const targetUrl = url.startsWith('/')
+      ? `${window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1') ? window.location.origin : 'https://www.reddit.com'}${url}`
+      : url
+    navigateTo(targetUrl)
+  } catch (err) {
+    console.error('Failed to navigate to:', url, err)
+  }
+}
+
 function getKind(): PostKind | undefined {
   const data = context.postData
   if (!data || typeof data.kind !== 'string') return undefined
@@ -147,7 +158,7 @@ function renderChallenge(
     if (url) {
       document
         .getElementById('enter')
-        ?.addEventListener('click', () => navigateTo(url))
+        ?.addEventListener('click', () => safeNavigateTo(url))
     }
     return
   }

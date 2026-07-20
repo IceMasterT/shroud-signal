@@ -20,6 +20,17 @@ function escapeHtml(s: string): string {
   )
 }
 
+function safeNavigateTo(url: string): void {
+  try {
+    const targetUrl = url.startsWith('/')
+      ? `${window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1') ? window.location.origin : 'https://www.reddit.com'}${url}`
+      : url
+    navigateTo(targetUrl)
+  } catch (err) {
+    console.error('Failed to navigate to:', url, err)
+  }
+}
+
 async function runSetup(): Promise<void> {
   render('<div class="panel"><p>Setting up your scrimmage…</p></div>')
   const result = await showForm({
@@ -135,7 +146,7 @@ async function runSetup(): Promise<void> {
   `)
   document
     .getElementById('enter')
-    ?.addEventListener('click', () => navigateTo(rsp.arenaUrl))
+    ?.addEventListener('click', () => safeNavigateTo(rsp.arenaUrl))
 }
 
 void runSetup()
