@@ -1085,6 +1085,21 @@ function renderMatch(
   }
 }
 
+function showFatalError(context: string, err: unknown): void {
+  console.error(`${context} failed:`, err)
+  const detail = err instanceof Error ? err.message : String(err)
+  showOverlay(`
+    <div class="panel">
+      <p class="error">Something went wrong loading this battle.</p>
+      <p class="error-detail">${escapeHtml(detail)}</p>
+      <button id="reload">Reload</button>
+    </div>
+  `)
+  document
+    .getElementById('reload')
+    ?.addEventListener('click', () => location.reload())
+}
+
 async function poll(): Promise<void> {
   try {
     const rsp = await fetchMatchState()
@@ -1097,16 +1112,7 @@ async function poll(): Promise<void> {
     isSpectator = rsp.spectator
     renderMatch(rsp.match, rsp.self, rsp.rosterA, rsp.rosterB)
   } catch (err) {
-    console.error('poll failed:', err)
-    showOverlay(`
-      <div class="panel">
-        <p class="error">Something went wrong loading this battle.</p>
-        <button id="reload">Reload</button>
-      </div>
-    `)
-    document
-      .getElementById('reload')
-      ?.addEventListener('click', () => location.reload())
+    showFatalError('poll', err)
   }
 }
 
@@ -1114,16 +1120,7 @@ async function boot(): Promise<void> {
   try {
     await bootUnsafe()
   } catch (err) {
-    console.error('boot failed:', err)
-    showOverlay(`
-      <div class="panel">
-        <p class="error">Something went wrong loading this battle.</p>
-        <button id="reload">Reload</button>
-      </div>
-    `)
-    document
-      .getElementById('reload')
-      ?.addEventListener('click', () => location.reload())
+    showFatalError('boot', err)
   }
 }
 
