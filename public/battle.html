@@ -139,36 +139,36 @@
     }
     .leaderboard {
       text-align: left;
-      font-size: 11px;
+      font-size: 10px;
+    }
+    .leaderboard-scroll {
+      max-height: min(240px, 40dvh);
+      overflow-y: auto;
+      margin-top: 0.4rem;
     }
     .leaderboard table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 0.4rem;
+      table-layout: fixed;
     }
     .leaderboard th,
     .leaderboard td {
-      padding: 0.25rem 0.4rem;
+      padding: 0.2rem 0.3rem;
       text-align: left;
       border-bottom: 1px solid #2a3444;
       color: #cdd8e6;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .leaderboard th {
+      position: sticky;
+      top: 0;
+      background: #0b0f16;
       color: #9fb4c9;
       text-transform: uppercase;
-      font-size: 10px;
+      font-size: 9px;
       letter-spacing: 0.05em;
-    }
-    .leaderboard tbody {
-      display: block;
-      max-height: 240px;
-      overflow-y: auto;
-    }
-    .leaderboard thead,
-    .leaderboard tbody tr {
-      display: table;
-      width: 100%;
-      table-layout: fixed;
     }
     </style>
   </head>

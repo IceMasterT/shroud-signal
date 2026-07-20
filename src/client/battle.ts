@@ -828,12 +828,14 @@ function matchLeaderboard(
   return `
     <div class="leaderboard">
       <b>LEADERBOARD</b>
-      <table>
-        <thead>
-          <tr><th>#</th><th>Pilot</th><th>Team</th><th>Ship</th><th>Kills</th><th>Score</th></tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="leaderboard-scroll">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Pilot</th><th>Team</th><th>Ship</th><th>Kills</th><th>Score</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     </div>
   `
 }
