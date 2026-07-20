@@ -235,6 +235,13 @@ export function fetchMatchState(): Promise<MatchStateRsp | ErrorRsp> {
   return getJsonOrError<MatchStateRsp>(Endpoint.MatchState)
 }
 
+export function fetchMatchStart(): Promise<{ok: true} | ErrorRsp> {
+  return postJsonOrError<Record<string, never>, {ok: true}>(
+    Endpoint.MatchStart,
+    {},
+  )
+}
+
 export function fetchScrimmageCreate(
   req: CreateScrimmageReq,
 ): Promise<CreateScrimmageRsp | ErrorRsp> {

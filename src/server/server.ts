@@ -62,6 +62,7 @@ import {
   joinMatch,
   joinScrimmage,
   movePlayerInMatch,
+  startRound,
   tickMatch,
 } from './match.ts'
 import {
@@ -183,6 +184,9 @@ async function route(
         break
       case Endpoint.MatchState:
         rsp = await routeMatchState()
+        break
+      case Endpoint.MatchStart:
+        rsp = await routeMatchStart()
         break
       case Endpoint.ScrimmageCreate:
         rsp = await routeScrimmageCreate(reqMsg)
@@ -493,6 +497,25 @@ async function routeMatchAbility(): Promise<MatchAbilityRsp | ErrorRsp> {
     const msg = err instanceof Error ? err.message : String(err)
     return {error: msg, status: 400}
   }
+}
+
+async function routeMatchStart(): Promise<{ok: true} | ErrorRsp> {
+  const userId = context.userId
+  if (!userId) return {error: 'must be logged in', status: 401}
+  const kind = getPostKind()
+  const matchId = matchIdFromKind(kind)
+  if (!matchId)
+    return {error: 'not a match arena or scrimmage post', status: 400}
+  const match = await getMatch(matchId)
+  if (!match) return {error: 'match not found', status: 404}
+  if (match.status !== 'warmup')
+    return {error: 'match already started or finished', status: 400}
+  const players = await getMatchPlayers(matchId)
+  if (players.length === 0) {
+    return {error: 'no players have joined yet', status: 400}
+  }
+  await startRound(match)
+  return {ok: true}
 }
 
 async function routeMatchState(): Promise<MatchStateRsp | ErrorRsp> {

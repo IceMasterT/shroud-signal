@@ -816,7 +816,7 @@ async function applyDamageInMatch(
   }
 }
 
-async function startRound(match: Match): Promise<Match> {
+export async function startRound(match: Match): Promise<Match> {
   const players = await getMatchPlayers(match.matchId)
   await redis.del(matchEliminatedKey(match.matchId))
   await redis.del(matchMinesKey(match.matchId))

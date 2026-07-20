@@ -35,6 +35,7 @@ import {
   fetchFire,
   fetchMatchAbility,
   fetchMatchJoin,
+  fetchMatchStart,
   fetchMatchState,
   fetchMove,
   fetchScrimmageJoin,
@@ -804,22 +805,38 @@ function rosterList(players: PlayerState[], cap: number): string {
   return `<b>${players.length}/${cap}</b> ${names}`
 }
 
-function killsScoreboard(
+function matchLeaderboard(
   rosterA: PlayerState[],
   rosterB: PlayerState[],
 ): string {
-  const ranked = [...rosterA, ...rosterB]
-    .filter(p => p.kills > 0)
-    .sort((a, b) => b.kills - a.kills)
-    .slice(0, 5)
+  const ranked = [...rosterA, ...rosterB].sort(
+    (a, b) => b.kills - a.kills || b.score - a.score,
+  )
   if (ranked.length === 0) return ''
   const rows = ranked
     .map(
-      (p, i) =>
-        `${i + 1}. ${escapeHtml(p.username)} (${teamLabel(p.team ?? 'A', isScrimmage)}) — ${p.kills} kill${p.kills === 1 ? '' : 's'}`,
+      (p, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td>${escapeHtml(p.username)}</td>
+          <td>${teamLabel(p.team ?? 'A', isScrimmage)}</td>
+          <td>${SHIP_LABEL[p.line]}</td>
+          <td>${p.kills}</td>
+          <td>${p.score}</td>
+        </tr>`,
     )
-    .join('<br>')
-  return `<p><b>TOP KILLS</b><br>${rows}</p>`
+    .join('')
+  return `
+    <div class="leaderboard">
+      <b>LEADERBOARD</b>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Pilot</th><th>Team</th><th>Ship</th><th>Kills</th><th>Score</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `
 }
 
 async function joinBattle(
@@ -922,10 +939,37 @@ function renderMatch(
           <div class="roster">TEAM ${teamLabel('A', isScrimmage).toUpperCase()}<br>${rosterList(rosterA, match.playerCap)}</div>
           <div class="roster">TEAM ${teamLabel('B', isScrimmage).toUpperCase()}<br>${rosterList(rosterB, match.playerCap)}</div>
         </div>
-        ${self ? '<p>You are in. Waiting for the round to start…</p>' : isSpectator ? "<p>This scrimmage is whitelist-only and you're not on the list — you can spectate the battle live.</p>" : isScrimmage ? renderScrimmageJoinChoice(match) : renderJoinChoice(match)}
+        ${
+          self
+            ? `
+          <p>You are in. Waiting for the round to start…</p>
+          <button id="start-early" style="margin-top: 1rem; width: 100%;">Start Match Now</button>
+        `
+            : isSpectator
+              ? "<p>This scrimmage is whitelist-only and you're not on the list — you can spectate the battle live.</p>"
+              : isScrimmage
+                ? renderScrimmageJoinChoice(match)
+                : renderJoinChoice(match)
+        }
       </div>
     `)
-    if (!self && !isSpectator) {
+    if (self) {
+      document
+        .getElementById('start-early')
+        ?.addEventListener('click', async () => {
+          const btn = document.getElementById(
+            'start-early',
+          ) as HTMLButtonElement | null
+          if (btn) btn.disabled = true
+          const rsp = await fetchMatchStart()
+          if (isErrorRsp(rsp)) {
+            alert(rsp.error)
+            if (btn) btn.disabled = false
+          } else {
+            await poll()
+          }
+        })
+    } else if (!isSpectator) {
       if (isScrimmage) {
         document
           .getElementById('pick-purple')
@@ -982,6 +1026,15 @@ function renderMatch(
   }
 
   if (match.status === 'round_active') {
+    if (!self && !isSpectator) {
+      showOverlay(`
+        <div class="panel">
+          <h1>Round ${match.round} in progress</h1>
+          <p>You didn't join before this round started. Wait for it to finish, then join during the next warm-up.</p>
+        </div>
+      `)
+      return
+    }
     hideOverlay()
     if (!scene) return
     if (self) {
@@ -1023,30 +1076,69 @@ function renderMatch(
         : `Team ${teamLabel(match.winner ?? 'A', isScrimmage)} wins the battle!`
     showOverlay(`
       <div class="panel">
-        <h1>${winnerText}</h1>
-        <p>Final: <span class="stat">A ${match.roundWinsA}</span> — <span class="stat">B ${match.roundWinsB}</span></p>
-        ${killsScoreboard(rosterA, rosterB)}
+        <h1>${isScrimmage ? 'Skirmish Ended' : 'Battle Ended'}</h1>
+        <p>${winnerText}</p>
+        <p>Final: <span class="stat">${teamLabel('A', isScrimmage)} ${match.roundWinsA}</span> — <span class="stat">${teamLabel('B', isScrimmage)} ${match.roundWinsB}</span></p>
+        ${matchLeaderboard(rosterA, rosterB)}
       </div>
     `)
   }
 }
 
 async function poll(): Promise<void> {
-  const rsp = await fetchMatchState()
-  if (isErrorRsp(rsp)) {
-    showOverlay(
-      `<div class="panel"><p class="error">${escapeHtml(rsp.error)}</p></div>`,
-    )
-    return
+  try {
+    const rsp = await fetchMatchState()
+    if (isErrorRsp(rsp)) {
+      showOverlay(
+        `<div class="panel"><p class="error">${escapeHtml(rsp.error)}</p></div>`,
+      )
+      return
+    }
+    isSpectator = rsp.spectator
+    renderMatch(rsp.match, rsp.self, rsp.rosterA, rsp.rosterB)
+  } catch (err) {
+    console.error('poll failed:', err)
+    showOverlay(`
+      <div class="panel">
+        <p class="error">Something went wrong loading this battle.</p>
+        <button id="reload">Reload</button>
+      </div>
+    `)
+    document
+      .getElementById('reload')
+      ?.addEventListener('click', () => location.reload())
   }
-  isSpectator = rsp.spectator
-  renderMatch(rsp.match, rsp.self, rsp.rosterA, rsp.rosterB)
 }
 
 async function boot(): Promise<void> {
+  try {
+    await bootUnsafe()
+  } catch (err) {
+    console.error('boot failed:', err)
+    showOverlay(`
+      <div class="panel">
+        <p class="error">Something went wrong loading this battle.</p>
+        <button id="reload">Reload</button>
+      </div>
+    `)
+    document
+      .getElementById('reload')
+      ?.addEventListener('click', () => location.reload())
+  }
+}
+
+async function bootUnsafe(): Promise<void> {
   const kind = getKind()
   if (kind?.kind !== 'match-arena' && kind?.kind !== 'scrimmage') {
-    showOverlay('<div class="panel"><p>Nothing to see here.</p></div>')
+    showOverlay(`
+      <div class="panel">
+        <p>Nothing to see here.</p>
+        <button id="reload">Reload</button>
+      </div>
+    `)
+    document
+      .getElementById('reload')
+      ?.addEventListener('click', () => location.reload())
     return
   }
   isScrimmage = kind.kind === 'scrimmage'
