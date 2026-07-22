@@ -65,7 +65,7 @@ test('isEligibleToJoin always allows moderators under a whitelist', () => {
 
 test('maxHullFor scales the 100-hull baseline by the line hull multiplier', () => {
   assert.equal(maxHullFor('transport'), 110)
-  assert.equal(maxHullFor('pathfinder'), 95)
+  assert.equal(maxHullFor('pathfinder'), 90)
   assert.equal(maxHullFor('miner'), 110)
 })
 

@@ -84,7 +84,7 @@ export const SHIP_STATS: Record<ShipLine, ShipStats> = {
   fighter: {speedMul: 1.2, hullMul: 0.8, dmgMul: 1.15},
   miner: {speedMul: 0.9, hullMul: 1.1, dmgMul: 1.0},
   transport: {speedMul: 0.75, hullMul: 1.1, dmgMul: 0.85},
-  pathfinder: {speedMul: 1.3, hullMul: 0.95, dmgMul: 1.3},
+  pathfinder: {speedMul: 1.3, hullMul: 0.9, dmgMul: 1.3},
   tender: {speedMul: 0.9, hullMul: 1.1, dmgMul: 0.8},
 }
 
