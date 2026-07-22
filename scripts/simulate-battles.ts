@@ -408,8 +408,14 @@ function useAbility(
   } else if (p.line === 'transport') {
     p.abilityActiveUntil = now + BULWARK_DURATION_MS
   } else if (p.line === 'tender') {
-    const allies = players.filter(o => o.alive && o.team === p.team)
-    const target = nearestAlly(allies, p, TENDER_HEAL_RANGE)
+    const allies = players
+      .filter(o => o.alive && o.team === p.team)
+      .map(o => ({userId: o.id, x: o.x, y: o.y, line: o.line}))
+    const target = nearestAlly(
+      allies,
+      {userId: p.id, x: p.x, y: p.y},
+      TENDER_HEAL_RANGE,
+    )
     if (target) {
       const t = players.find(o => o.id === target.userId)
       if (t) t.hull = Math.min(t.maxHull, t.hull + TENDER_HEAL_AMOUNT)
