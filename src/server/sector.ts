@@ -8,11 +8,11 @@ import type {
 import {
   LASER_COOLDOWN_MS,
   LASER_RANGE,
-  SHIP_LINES,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
   TORPEDO_SPEED,
 } from '../shared/api.ts'
+import {getOrCreatePilotProfile} from './pilot.ts'
 
 const START_HULL = 100
 const WORLD_HALF = 900 // spawn/clamp bounds, world units from sector center
@@ -62,21 +62,13 @@ function killsLeaderboardKey(subredditId: string): string {
 const ACTIVE_SECTORS_KEY = 'active_sectors'
 const ACTIVE_SECTOR_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
-/** Stable, deterministic starter-line assignment from a Reddit user id. */
-function lineForUser(userId: string): ShipLine {
-  let hash = 0
-  for (let i = 0; i < userId.length; i++)
-    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0
-  return SHIP_LINES[hash % SHIP_LINES.length] ?? 'fighter'
-}
-
 function randSpawn(): {x: number; y: number} {
   const a = Math.random() * Math.PI * 2
   const r = 150 + Math.random() * 400
   return {x: Math.round(Math.cos(a) * r), y: Math.round(Math.sin(a) * r)}
 }
 
-/** Loads (or creates) a player's state within one sector. */
+/** Loads (or creates) a player's state within one sector. The ship line always comes from the pilot's persistent profile, never assigned locally. */
 export async function getOrCreatePlayer(
   postId: string,
   userId: string,
@@ -84,11 +76,18 @@ export async function getOrCreatePlayer(
   snoovatar: string | undefined,
 ): Promise<PlayerState> {
   const snoovatarOrNull = snoovatar ?? null
+  // By the time /api/init runs, the client has already resolved (or chosen)
+  // the pilot's line via /api/pilot/profile + /api/pilot/choose-line, so
+  // profile.line should always be set here — the 'fighter' fallback only
+  // guards against a client that skips straight to /api/init.
+  const profile = await getOrCreatePilotProfile(userId, username)
+  const line = profile.line ?? 'fighter'
   const existing = await redis.hGet(playersKey(postId), userId)
   if (existing) {
     const p = JSON.parse(existing) as PlayerState
     p.username = username
     p.snoovatar = snoovatarOrNull
+    p.line = line
     p.lastLaserAt = p.lastLaserAt ?? 0
     p.lastTorpedoAt = p.lastTorpedoAt ?? 0
     p.team = p.team ?? null
@@ -106,7 +105,7 @@ export async function getOrCreatePlayer(
     userId,
     username,
     snoovatar: snoovatarOrNull,
-    line: lineForUser(userId),
+    line,
     x: spawn.x,
     y: spawn.y,
     rotation: 0,
@@ -127,18 +126,14 @@ export async function getOrCreatePlayer(
   return player
 }
 
-/** Sets (or changes) a player's chosen ship line, creating them first if this is their first visit. */
-export async function setPlayerLine(
+/** Best-effort peek at a pre-existing sector player's line, read-only (creates nothing) — used once by the pilot-profile migration path so a player who predates this feature isn't forced through the ship picker again. */
+export async function peekSectorLine(
   postId: string,
   userId: string,
-  username: string,
-  snoovatar: string | undefined,
-  line: ShipLine,
-): Promise<PlayerState> {
-  const player = await getOrCreatePlayer(postId, userId, username, snoovatar)
-  player.line = line
-  await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(player)})
-  return player
+): Promise<ShipLine | undefined> {
+  const existing = await redis.hGet(playersKey(postId), userId)
+  if (!existing) return undefined
+  return (JSON.parse(existing) as PlayerState).line
 }
 
 async function readHull(postId: string, userId: string): Promise<number> {
