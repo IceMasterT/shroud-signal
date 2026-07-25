@@ -9,6 +9,8 @@ import type {
 import {
   type ChallengeAction,
   type ChallengeStateRsp,
+  type ChooseLineReq,
+  type ChooseLineRsp,
   type CreateChallengeReq,
   type CreateChallengeRsp,
   type CreateScrimmageReq,
@@ -29,6 +31,7 @@ import {
   type MatchStateRsp,
   type MoveReq,
   type MoveRsp,
+  type PilotProfileRsp,
   type PostKind,
   type RespondChallengeReq,
   type RespondChallengeRsp,
@@ -36,8 +39,6 @@ import {
   type ScoreRsp,
   type ScrimmageJoinReq,
   type ScrimmageJoinRsp,
-  type SectorJoinReq,
-  type SectorJoinRsp,
   SHIP_LINES,
   SQUAD_PRESETS,
   SQUAD_RULES,
@@ -65,6 +66,7 @@ import {
   requestEarlyStart,
   tickMatch,
 } from './match.ts'
+import {chooseLine, getOrCreatePilotProfile} from './pilot.ts'
 import {
   addScore,
   announceJoin,
@@ -73,9 +75,9 @@ import {
   leaveSector,
   listOtherPlayers,
   movePlayer,
+  peekSectorLine,
   pulseActiveSectors,
   sectorChannel,
-  setPlayerLine,
   topPilots,
   touchActiveSector,
 } from './sector.ts'
@@ -84,7 +86,8 @@ type AnyRsp =
   | GetCounterRsp
   | IncCounterRsp
   | InitRsp
-  | SectorJoinRsp
+  | PilotProfileRsp
+  | ChooseLineRsp
   | MoveRsp
   | ScoreRsp
   | FireRsp
@@ -149,8 +152,11 @@ async function route(
       case Endpoint.Init:
         rsp = await routeInit()
         break
-      case Endpoint.SectorJoin:
-        rsp = await routeSectorJoin(reqMsg)
+      case Endpoint.PilotProfile:
+        rsp = await routePilotProfile()
+        break
+      case Endpoint.PilotChooseLine:
+        rsp = await routePilotChooseLine(reqMsg)
         break
       case Endpoint.Move:
         rsp = await routeMove(reqMsg)
@@ -250,20 +256,32 @@ async function routeInit(): Promise<InitRsp | ErrorRsp> {
   return {postId, channel: sectorChannel(postId), player, others}
 }
 
-async function routeSectorJoin(
-  reqMsg: IncomingMessage,
-): Promise<SectorJoinRsp | ErrorRsp> {
+async function routePilotProfile(): Promise<PilotProfileRsp | ErrorRsp> {
   const postId = context.postId
   const userId = context.userId
   if (!postId) return {error: 'no postId', status: 400}
   if (!userId) return {error: 'must be logged in', status: 401}
   const username = context.username ?? 'anonymous'
-  const req = await readJson<SectorJoinReq>(reqMsg)
+  const migrateLine = await peekSectorLine(postId, userId)
+  return await getOrCreatePilotProfile(userId, username, migrateLine)
+}
+
+async function routePilotChooseLine(
+  reqMsg: IncomingMessage,
+): Promise<ChooseLineRsp | ErrorRsp> {
+  const userId = context.userId
+  if (!userId) return {error: 'must be logged in', status: 401}
+  const username = context.username ?? 'anonymous'
+  const req = await readJson<ChooseLineReq>(reqMsg)
   if (!SHIP_LINES.includes(req.line)) {
     return {error: 'invalid ship line', status: 400}
   }
-  await setPlayerLine(postId, userId, username, context.snoovatar, req.line)
-  return {ok: true}
+  try {
+    return await chooseLine(userId, username, req.line)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {error: msg, status: 409}
+  }
 }
 
 async function routeMove(reqMsg: IncomingMessage): Promise<MoveRsp | ErrorRsp> {
