@@ -14,8 +14,9 @@ import {
   fetchLeaderboard,
   fetchLeave,
   fetchMove,
+  fetchPilotChooseLine,
+  fetchPilotProfile,
   fetchScore,
-  fetchSectorJoin,
   isErrorRsp,
 } from './fetch.ts'
 import {isTouchDevice, TouchButton, VirtualJoystick} from './touchControls.ts'
@@ -91,8 +92,6 @@ export class SectorScene extends Phaser.Scene {
   async create(): Promise<void> {
     const W = this.scale.width
     const H = this.scale.height
-
-    const chosenLine = await this.showShipPicker()
 
     // Starfield — pre-rolled positions, drawn once, cheap.
     this.starGfx = this.add.graphics().setDepth(0)
@@ -196,11 +195,20 @@ export class SectorScene extends Phaser.Scene {
       .setVisible(false)
     kb.on('keydown-L', () => void this.toggleLeaderboard())
 
-    const joined = await fetchSectorJoin({line: chosenLine})
-    if (isErrorRsp(joined)) {
-      this.hudName.setText('Failed to join — reload to retry')
+    const profile = await fetchPilotProfile()
+    if (isErrorRsp(profile)) {
+      this.hudName.setText('Failed to connect — reload to retry')
       return
     }
+    if (profile.line === null) {
+      const chosenLine = await this.showShipPicker()
+      const chosen = await fetchPilotChooseLine({line: chosenLine})
+      if (isErrorRsp(chosen)) {
+        this.hudName.setText('Failed to join — reload to retry')
+        return
+      }
+    }
+
     const init = await fetchInit()
     if (!init) {
       this.hudName.setText('Failed to connect — reload to retry')
