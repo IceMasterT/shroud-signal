@@ -1,4 +1,15 @@
-import type {ShipLine} from '../shared/api.ts'
+import {redis} from '@devvit/web/server'
+import type {PilotProfile, PilotProfileRsp, ShipLine} from '../shared/api.ts'
+
+const PILOTS_KEY = 'pilots'
+
+function creditsKey(userId: string): string {
+  return `pilot:${userId}:credits`
+}
+
+function xpKey(userId: string): string {
+  return `pilot:${userId}:xp`
+}
 
 /** XP required to advance from `level` to `level + 1` — a gentle, ever-slowing climb rather than linear or explosive. */
 export function xpToNextLevel(level: number): number {
@@ -32,4 +43,78 @@ export function applyDeathPenalty(credits: number): number {
 /** One ship line per pilot, chosen once — no respeccing. */
 export function canChooseLine(profile: {line: ShipLine | null}): boolean {
   return profile.line === null
+}
+
+async function readCredits(userId: string): Promise<number> {
+  const v = await redis.get(creditsKey(userId))
+  return v === undefined ? 0 : Number(v)
+}
+
+async function readXp(userId: string): Promise<number> {
+  const v = await redis.get(xpKey(userId))
+  return v === undefined ? 0 : Number(v)
+}
+
+/** Loads a pilot's stored profile as-is, creating a fresh one (line unset, or seeded from `migrateLine`) if this is their first-ever visit. Never touches the live credits/xp counters — callers merge those in separately. */
+async function loadOrInitProfile(
+  userId: string,
+  username: string,
+  migrateLine: ShipLine | undefined,
+): Promise<PilotProfile> {
+  const existing = await redis.hGet(PILOTS_KEY, userId)
+  if (existing) {
+    const profile = JSON.parse(existing) as PilotProfile
+    profile.username = username
+    await redis.hSet(PILOTS_KEY, {[userId]: JSON.stringify(profile)})
+    return profile
+  }
+  const profile: PilotProfile = {
+    userId,
+    username,
+    line: migrateLine ?? null,
+    shipTier: 1,
+    moduleInventory: [],
+    equippedModuleIds: [null, null, null],
+    createdAt: Date.now(),
+  }
+  await redis.hSet(PILOTS_KEY, {[userId]: JSON.stringify(profile)})
+  return profile
+}
+
+async function mergeLiveCounters(
+  profile: PilotProfile,
+): Promise<PilotProfileRsp> {
+  const [credits, xp] = await Promise.all([
+    readCredits(profile.userId),
+    readXp(profile.userId),
+  ])
+  return {...profile, credits, xp, ...levelForXp(xp)}
+}
+
+/**
+ * Loads (or creates) a pilot's global profile. `migrateLine` seeds the
+ * initial line for a pre-existing sector player who predates this feature,
+ * so they aren't forced through the ship picker again — pass `undefined`
+ * once a pilot might already have a profile of their own.
+ */
+export async function getOrCreatePilotProfile(
+  userId: string,
+  username: string,
+  migrateLine?: ShipLine,
+): Promise<PilotProfileRsp> {
+  const profile = await loadOrInitProfile(userId, username, migrateLine)
+  return mergeLiveCounters(profile)
+}
+
+/** Locks in a pilot's ship line, once. Throws if they've already chosen one. */
+export async function chooseLine(
+  userId: string,
+  username: string,
+  line: ShipLine,
+): Promise<PilotProfileRsp> {
+  const profile = await loadOrInitProfile(userId, username, undefined)
+  if (!canChooseLine(profile)) throw new Error('line already chosen')
+  const updated: PilotProfile = {...profile, line}
+  await redis.hSet(PILOTS_KEY, {[userId]: JSON.stringify(updated)})
+  return mergeLiveCounters(updated)
 }
