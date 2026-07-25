@@ -188,9 +188,55 @@ export type InitRsp = {
 export type MoveReq = {x: number; y: number; rotation: number}
 export type MoveRsp = {ok: true}
 
-/** Set (or change) the caller's ship line for this sector, before init spawns them. */
-export type SectorJoinReq = {line: ShipLine}
-export type SectorJoinRsp = {ok: true}
+export type Rarity = 'common' | 'rare' | 'epic' | 'legendary'
+
+/** One acquired module in a pilot's inventory. The module catalog/effects/prices are a separate, not-yet-built system — this is just the instance shape. */
+export type PilotModuleInstance = {
+  instanceId: string
+  moduleId: string
+  rarity: Rarity
+  quality: number
+}
+
+/**
+ * A pilot's persistent identity across every Sector Mode post on every
+ * subreddit — never read or written by Battle Mode (match.ts/challenge.ts).
+ * `line` is null until `chooseLine` succeeds, then locked forever.
+ */
+export type PilotProfile = {
+  userId: string
+  username: string
+  line: ShipLine | null
+  shipTier: number
+  moduleInventory: PilotModuleInstance[]
+  equippedModuleIds: (string | null)[]
+  createdAt: number
+}
+
+/** GET /api/pilot/profile response — the stored profile merged with the live credits/xp counters and the level derived from them. */
+export type PilotProfileRsp = PilotProfile & {
+  credits: number
+  xp: number
+  level: number
+  xpIntoLevel: number
+  xpToNext: number
+}
+
+/** POST /api/pilot/choose-line — locks in a pilot's ship line, once, ever. */
+export type ChooseLineReq = {line: ShipLine}
+export type ChooseLineRsp = PilotProfileRsp
+
+/** Ship-tier art lookup (`public/assets/ships/`) — prefixes don't derive algorithmically from folder names, hence an explicit table. */
+export const SHIP_TIER_ASSET: Record<
+  ShipLine,
+  {folder: string; prefix: string}
+> = {
+  fighter: {folder: 'Menta-Talon', prefix: 'MT'},
+  miner: {folder: 'Menta-Prospector', prefix: 'MP'},
+  transport: {folder: 'Menta-Drayman', prefix: 'DM'},
+  pathfinder: {folder: 'Menta-Pathfinder', prefix: 'PF'},
+  tender: {folder: 'Menta-Tender', prefix: 'MD'},
+}
 
 /**
  * Fire the ship's weapon. No client-supplied geometry — the server fires
@@ -434,7 +480,8 @@ export const Endpoint = {
   GetCounter: 'api/counter',
   IncCounter: 'api/counter/inc',
   Init: 'api/init',
-  SectorJoin: 'api/sector/join',
+  PilotProfile: 'api/pilot/profile',
+  PilotChooseLine: 'api/pilot/choose-line',
   Move: 'api/move',
   Leave: 'api/leave',
   Score: 'api/score',
@@ -460,7 +507,8 @@ export const EndpointMethod = {
   [Endpoint.GetCounter]: 'GET',
   [Endpoint.IncCounter]: 'POST',
   [Endpoint.Init]: 'GET',
-  [Endpoint.SectorJoin]: 'POST',
+  [Endpoint.PilotProfile]: 'GET',
+  [Endpoint.PilotChooseLine]: 'POST',
   [Endpoint.Move]: 'POST',
   [Endpoint.Leave]: 'POST',
   [Endpoint.Score]: 'POST',
