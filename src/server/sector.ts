@@ -80,13 +80,16 @@ export async function getOrCreatePlayer(
   snoovatar: string | undefined,
 ): Promise<PlayerState> {
   const snoovatarOrNull = snoovatar ?? null
-  // By the time /api/init runs, the client has already resolved (or chosen)
-  // the pilot's line via /api/pilot/profile + /api/pilot/choose-line, so
-  // profile.line should always be set here — the 'fighter' fallback only
-  // guards against a client that skips straight to /api/init.
-  const profile = await getOrCreatePilotProfile(userId, username)
-  const line = profile.line ?? 'fighter'
   const existing = await redis.hGet(playersKey(postId), userId)
+  // Read the sector's own pre-existing line (if any) before touching the
+  // pilot profile, so migration works even if a caller reaches /api/init
+  // without going through /api/pilot/profile first — this no longer
+  // depends on client call ordering the way it used to.
+  const migrateLine = existing
+    ? (JSON.parse(existing) as PlayerState).line
+    : undefined
+  const profile = await getOrCreatePilotProfile(userId, username, migrateLine)
+  const line = profile.line ?? 'fighter'
   if (existing) {
     const p = JSON.parse(existing) as PlayerState
     p.username = username
