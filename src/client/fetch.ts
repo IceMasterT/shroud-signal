@@ -1,5 +1,7 @@
 import {
   type ChallengeStateRsp,
+  type ChooseLineReq,
+  type ChooseLineRsp,
   type CreateChallengeReq,
   type CreateChallengeRsp,
   type CreateScrimmageReq,
@@ -20,14 +22,13 @@ import {
   type MatchStateRsp,
   type MoveReq,
   type MoveRsp,
+  type PilotProfileRsp,
   type RespondChallengeReq,
   type RespondChallengeRsp,
   type ScoreReq,
   type ScoreRsp,
   type ScrimmageJoinReq,
   type ScrimmageJoinRsp,
-  type SectorJoinReq,
-  type SectorJoinRsp,
 } from '../shared/api.ts'
 
 export function isErrorRsp(x: unknown): x is ErrorRsp {
@@ -131,12 +132,6 @@ export function fetchMove(req: MoveReq): Promise<MoveRsp | undefined> {
   return postJson<MoveReq, MoveRsp>(Endpoint.Move, req)
 }
 
-export function fetchSectorJoin(
-  req: SectorJoinReq,
-): Promise<SectorJoinRsp | ErrorRsp> {
-  return postJsonOrError<SectorJoinReq, SectorJoinRsp>(Endpoint.SectorJoin, req)
-}
-
 export function fetchLeave(): Promise<Response> {
   // Fire-and-forget on page unload; keepalive lets it survive navigation.
   return fetch(Endpoint.Leave, {method: 'POST', keepalive: true})
@@ -216,6 +211,19 @@ export function fetchChallengeRespond(
 
 export function fetchChallengeState(): Promise<ChallengeStateRsp | ErrorRsp> {
   return getJsonOrError<ChallengeStateRsp>(Endpoint.ChallengeState)
+}
+
+export function fetchPilotProfile(): Promise<PilotProfileRsp | ErrorRsp> {
+  return getJsonOrError<PilotProfileRsp>(Endpoint.PilotProfile)
+}
+
+export function fetchPilotChooseLine(
+  req: ChooseLineReq,
+): Promise<ChooseLineRsp | ErrorRsp> {
+  return postJsonOrError<ChooseLineReq, ChooseLineRsp>(
+    Endpoint.PilotChooseLine,
+    req,
+  )
 }
 
 export function fetchMatchJoin(
