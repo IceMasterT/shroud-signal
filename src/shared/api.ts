@@ -267,6 +267,13 @@ export type RealtimeMsg =
   | {type: 'hit'; targetUserId: string; shooterUserId: string; hull: number}
   | {type: 'miss'; x: number; y: number}
   | {type: 'respawn'; player: PlayerState}
+  | {
+      type: 'pilot_reward'
+      userId: string
+      kind: 'hit' | 'kill'
+      xpGained: number
+      creditsGained: number
+    }
 
 /** Top pilots for the current subreddit, by score. */
 export type LeaderboardEntry = {username: string; score: number; kills: number}
