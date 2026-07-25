@@ -12,7 +12,11 @@ import {
   TORPEDO_RANGE,
   TORPEDO_SPEED,
 } from '../shared/api.ts'
-import {getOrCreatePilotProfile} from './pilot.ts'
+import {
+  applyDeathPenaltyFor,
+  getOrCreatePilotProfile,
+  grantCombatReward,
+} from './pilot.ts'
 
 const START_HULL = 100
 const WORLD_HALF = 900 // spawn/clamp bounds, world units from sector center
@@ -427,11 +431,14 @@ async function applyDamage(
 
   if (hull > 0) {
     await addScore(postId, subredditId, shooterId, shooterUsername, HIT_SCORE)
+    await broadcastPilotReward(postId, shooterId, 'hit')
     return
   }
 
   await addScore(postId, subredditId, shooterId, shooterUsername, KILL_SCORE)
   await addKill(postId, subredditId, shooterId, shooterUsername)
+  await broadcastPilotReward(postId, shooterId, 'kill')
+  await applyDeathPenaltyFor(target.userId)
   const spawn = randSpawn()
   await redis.hSet(hullKey(postId), {[target.userId]: String(START_HULL)})
   // `target` came from listOtherPlayers, which returns the raw players-hash
@@ -451,6 +458,22 @@ async function applyDamage(
     [target.userId]: JSON.stringify(respawned),
   })
   await broadcast(postId, {type: 'respawn', player: respawned})
+}
+
+/** Grants Sector Mode combat XP/credits and tells the earning pilot's own client so it can show a toast — every other client on the channel gets the same message but ignores it, since the `userId` isn't theirs. */
+async function broadcastPilotReward(
+  postId: string,
+  userId: string,
+  kind: 'hit' | 'kill',
+): Promise<void> {
+  const {xpGained, creditsGained} = await grantCombatReward(userId, kind)
+  await broadcast(postId, {
+    type: 'pilot_reward',
+    userId,
+    kind,
+    xpGained,
+    creditsGained,
+  })
 }
 
 async function broadcast(postId: string, msg: RealtimeMsg): Promise<void> {
