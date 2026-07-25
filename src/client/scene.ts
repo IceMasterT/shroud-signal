@@ -500,6 +500,11 @@ export class SectorScene extends Phaser.Scene {
         this.player.kills = msg.kills
         this.updateScoreHud()
       }
+    } else if (
+      msg.type === 'pilot_reward' &&
+      msg.userId === this.player?.userId
+    ) {
+      this.showPulse(`+${msg.xpGained} XP   +${msg.creditsGained} CR`)
     } else if (msg.type === 'pulse') {
       this.showPulse(msg.text)
     } else if (msg.type === 'shot') {
