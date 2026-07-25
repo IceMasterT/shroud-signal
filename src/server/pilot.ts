@@ -118,3 +118,29 @@ export async function chooseLine(
   await redis.hSet(PILOTS_KEY, {[userId]: JSON.stringify(updated)})
   return mergeLiveCounters(updated)
 }
+
+const COMBAT_REWARDS: Record<'hit' | 'kill', {xp: number; credits: number}> = {
+  hit: {xp: 2, credits: 1},
+  kill: {xp: 15, credits: 10},
+}
+
+/** Credits/XP for a Sector Mode hit or kill — atomic INCRBY, safe even if the same pilot is active in two sector posts at once. Returns the amounts granted, for the caller to relay in a realtime toast. */
+export async function grantCombatReward(
+  userId: string,
+  kind: 'hit' | 'kill',
+): Promise<{xpGained: number; creditsGained: number}> {
+  const reward = COMBAT_REWARDS[kind]
+  await Promise.all([
+    redis.incrBy(creditsKey(userId), reward.credits),
+    redis.incrBy(xpKey(userId), reward.xp),
+  ])
+  return {xpGained: reward.xp, creditsGained: reward.credits}
+}
+
+/** Applies the small currency-loss death penalty, atomically. */
+export async function applyDeathPenaltyFor(userId: string): Promise<void> {
+  const credits = await readCredits(userId)
+  const penalized = applyDeathPenalty(credits)
+  const delta = penalized - credits
+  if (delta !== 0) await redis.incrBy(creditsKey(userId), delta)
+}
