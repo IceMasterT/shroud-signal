@@ -74,6 +74,8 @@ export class SectorScene extends Phaser.Scene {
   private stars: {x: number; y: number; r: number; a: number}[] = []
   private leaderboardPanel!: Phaser.GameObjects.Text
   private leaderboardOpen = false
+  private pilotPanel!: Phaser.GameObjects.Text
+  private pilotPanelOpen = false
   private hudPulse!: Phaser.GameObjects.Text
   private pulseHideEvent: Phaser.Time.TimerEvent | null = null
 
@@ -155,7 +157,7 @@ export class SectorScene extends Phaser.Scene {
       .text(
         W - 12,
         H - 12,
-        '[SPACE] LASER  ·  [E] MISSILE  ·  [L] LEADERBOARD',
+        '[SPACE] LASER  ·  [E] MISSILE  ·  [L] LEADERBOARD  ·  [P] PILOT',
         {
           fontFamily: 'monospace',
           fontSize: '10px',
@@ -178,6 +180,14 @@ export class SectorScene extends Phaser.Scene {
         'LDR',
         () => void this.toggleLeaderboard(),
       )
+      new TouchButton(
+        this,
+        W - 115,
+        H - 210,
+        34,
+        'PLT',
+        () => void this.togglePilotPanel(),
+      )
     }
 
     this.leaderboardPanel = this.add
@@ -194,6 +204,21 @@ export class SectorScene extends Phaser.Scene {
       .setDepth(60)
       .setVisible(false)
     kb.on('keydown-L', () => void this.toggleLeaderboard())
+
+    this.pilotPanel = this.add
+      .text(W / 2, H / 2, '', {
+        fontFamily: 'monospace',
+        fontSize: '13px',
+        color: '#eef6ff',
+        align: 'center',
+        backgroundColor: '#050c18',
+        padding: {x: 18, y: 14},
+      })
+      .setOrigin(0.5, 0.5)
+      .setScrollFactor(0)
+      .setDepth(60)
+      .setVisible(false)
+    kb.on('keydown-P', () => void this.togglePilotPanel())
 
     const profile = await fetchPilotProfile()
     if (isErrorRsp(profile)) {
@@ -354,6 +379,24 @@ export class SectorScene extends Phaser.Scene {
       )
       .join('\n')
     this.leaderboardPanel.setText(`TOP PILOTS\n\n${lines}`)
+  }
+
+  private async togglePilotPanel(): Promise<void> {
+    this.pilotPanelOpen = !this.pilotPanelOpen
+    if (!this.pilotPanelOpen) {
+      this.pilotPanel.setVisible(false)
+      return
+    }
+    this.pilotPanel.setText('Loading…').setVisible(true)
+    const profile = await fetchPilotProfile()
+    if (!this.pilotPanelOpen) return // toggled off while awaiting
+    if (isErrorRsp(profile)) {
+      this.pilotPanel.setText('PILOT\n\nFailed to load.')
+      return
+    }
+    this.pilotPanel.setText(
+      `PILOT\n\nLEVEL ${profile.level}   (${profile.xpIntoLevel}/${profile.xpToNext} XP)\nCREDITS ${profile.credits}\nSHIP TIER  Mk.${profile.shipTier}`,
+    )
   }
 
   private showPulse(text: string): void {
