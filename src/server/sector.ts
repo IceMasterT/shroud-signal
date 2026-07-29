@@ -587,14 +587,10 @@ export async function fireWeapon(
       : undefined
     if (
       closestNpc &&
-      (!closest || (npcDistance !== undefined && npcDistance < closest.distance))
+      (!closest ||
+        (npcDistance !== undefined && npcDistance < closest.distance))
     ) {
-      await applyPlayerDamageToNpc(
-        postId,
-        shooterId,
-        closestNpc,
-        tuning.damage,
-      )
+      await applyPlayerDamageToNpc(postId, shooterId, closestNpc, tuning.damage)
       return
     }
     if (!closest) return
@@ -699,8 +695,13 @@ async function resolveTorpedoImpact(
     impactY,
     TORPEDO_IMPACT_RADIUS,
   )
-  const npcDistance = npc ? Math.hypot(npc.x - impactX, npc.y - impactY) : undefined
-  if (npc && (!closest || (npcDistance !== undefined && npcDistance < closest.distance))) {
+  const npcDistance = npc
+    ? Math.hypot(npc.x - impactX, npc.y - impactY)
+    : undefined
+  if (
+    npc &&
+    (!closest || (npcDistance !== undefined && npcDistance < closest.distance))
+  ) {
     await applyPlayerDamageToNpc(postId, shooterId, npc, TORPEDO_DAMAGE)
     return
   }

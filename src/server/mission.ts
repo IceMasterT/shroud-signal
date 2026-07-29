@@ -7,14 +7,14 @@ import type {
   SectorTheme,
   WeaponMode,
 } from '../shared/api.ts'
+import {grantCombatReward} from './pilot.ts'
 import {
   applyNpcDamageToPlayer,
   HITSCAN_TUNING,
   listOtherPlayers,
-  WORLD_HALF,
   sectorChannel,
+  WORLD_HALF,
 } from './sector.ts'
-import {grantCombatReward} from './pilot.ts'
 
 function missionKey(postId: string): string {
   return `sector:${postId}:mission`
@@ -309,7 +309,10 @@ export async function applyPlayerDamageToNpc(
     await redis.hIncrBy(npcHullKey(postId), npc.npcId, -damage),
   )
   if (!mission.participants.includes(shooterUserId)) {
-    mission = {...mission, participants: [...mission.participants, shooterUserId]}
+    mission = {
+      ...mission,
+      participants: [...mission.participants, shooterUserId],
+    }
     await redis.set(missionKey(postId), JSON.stringify(mission))
   }
 
@@ -322,7 +325,10 @@ export async function applyPlayerDamageToNpc(
     redis.hDel(npcsKey(postId), [npc.npcId]),
     redis.hDel(npcHullKey(postId), [npc.npcId]),
   ])
-  await grantCombatReward(shooterUserId, npc.kind === 'capital' ? 'kill' : 'hit')
+  await grantCombatReward(
+    shooterUserId,
+    npc.kind === 'capital' ? 'kill' : 'hit',
+  )
   mission = await spawnNextWaveIfClear(postId, mission)
   await broadcastMission(postId, await toMissionRsp(postId, mission))
 }

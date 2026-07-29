@@ -67,6 +67,7 @@ import {
   requestEarlyStart,
   tickMatch,
 } from './match.ts'
+import {getOrCreateMission, pickSectorTheme} from './mission.ts'
 import {chooseLine, getOrCreatePilotProfile} from './pilot.ts'
 import {
   activateAbility as activateSectorAbility,
@@ -259,7 +260,12 @@ async function routeInit(): Promise<InitRsp | ErrorRsp> {
   const others = await listOtherPlayers(postId, userId)
   await announceJoin(postId, player)
   await touchActiveSector(postId)
-  return {postId, channel: sectorChannel(postId), player, others}
+  const kind = getPostKind()
+  const mission =
+    kind?.kind === 'sector'
+      ? await getOrCreateMission(postId, kind.theme)
+      : null
+  return {postId, channel: sectorChannel(postId), player, others, mission}
 }
 
 async function routePilotProfile(): Promise<PilotProfileRsp | ErrorRsp> {
@@ -688,7 +694,10 @@ async function routeGalaxyPulse(): Promise<TriggerResponse> {
 }
 
 async function routeMenuNewPost(): Promise<UiResponse> {
-  const post = await reddit.submitCustomPost({title: context.appSlug})
+  const post = await reddit.submitCustomPost({
+    title: context.appSlug,
+    postData: {kind: 'sector', theme: pickSectorTheme()},
+  })
   return {
     showToast: {text: `Post ${post.id} created.`, appearance: 'success'},
     navigateTo: post.url,
