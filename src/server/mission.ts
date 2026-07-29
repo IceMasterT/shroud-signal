@@ -7,6 +7,7 @@ import type {
   WeaponMode,
 } from '../shared/api.ts'
 import {HITSCAN_TUNING, WORLD_HALF, sectorChannel} from './sector.ts'
+import {grantCombatReward} from './pilot.ts'
 
 function missionKey(postId: string): string {
   return `sector:${postId}:mission`
@@ -197,4 +198,124 @@ async function broadcastMission(
   mission: MissionRsp,
 ): Promise<void> {
   await realtime.send(sectorChannel(postId), {type: 'mission_state', mission})
+}
+
+/** Closest alive NPC within range and roughly facing the shooter's aim direction — mirrors fireWeapon's own player-targeting loop in sector.ts, over NPCs instead. No aiming cone beyond a generous check, since a shooter's own cone check already happened before this is called. */
+export async function findClosestNpcInRange(
+  postId: string,
+  x: number,
+  y: number,
+  dirX: number,
+  dirY: number,
+  range: number,
+): Promise<NpcState | undefined> {
+  const npcs = await readNpcs(postId)
+  let closest: {npc: NpcState; distance: number} | undefined
+  for (const npc of npcs) {
+    const dx = npc.x - x
+    const dy = npc.y - y
+    const distance = Math.hypot(dx, dy)
+    if (distance === 0 || distance > range) continue
+    const dot = (dx / distance) * dirX + (dy / distance) * dirY
+    const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
+    if (angle > 0.5) continue // generous cone — same order as the weapons' own halfAngle values
+    if (!closest || distance < closest.distance) closest = {npc, distance}
+  }
+  return closest?.npc
+}
+
+/** Closest alive NPC within a plain radius, no facing/cone check — for torpedo impact resolution, which has a fixed impact point, not a shooter aiming. Mirrors the existing player-side torpedo-impact loop in sector.ts, which is likewise cone-free. */
+export async function findClosestNpcInRadius(
+  postId: string,
+  x: number,
+  y: number,
+  radius: number,
+): Promise<NpcState | undefined> {
+  const npcs = await readNpcs(postId)
+  let closest: {npc: NpcState; distance: number} | undefined
+  for (const npc of npcs) {
+    const distance = Math.hypot(npc.x - x, npc.y - y)
+    if (distance > radius) continue
+    if (!closest || distance < closest.distance) closest = {npc, distance}
+  }
+  return closest?.npc
+}
+
+/**
+ * If the npcs hash is now empty, either spawns the next wave or resolves the
+ * mission as won. Race-guarded: only the request whose hIncrBy on this wave's
+ * claim key returns 1 actually performs the spawn/resolve — every other
+ * concurrent caller that also just cleared the last NPC of the wave sees a
+ * higher number and backs out, so a wave is never skipped or double-spawned.
+ */
+async function spawnNextWaveIfClear(
+  postId: string,
+  mission: Mission,
+): Promise<Mission> {
+  const remaining = await redis.hLen(npcsKey(postId))
+  if (remaining > 0) return mission
+
+  const claimed = await redis.hIncrBy(
+    waveClaimKey(postId),
+    String(mission.wave),
+    1,
+  )
+  if (claimed !== 1) return mission // another request already advancing this wave
+
+  const starbaseHull = await readStarbaseHull(postId)
+  const outcome = evaluateMissionOutcome(
+    starbaseHull,
+    mission.wave,
+    mission.totalWaves,
+    0,
+  )
+  // Either terminal outcome resolves the mission without spawning further —
+  // the starbase could have been destroyed by the same volley that killed
+  // the wave's last NPC, so 'won' is never assumed just because the wave's
+  // clear condition on its own would say so.
+  if (outcome !== 'active') {
+    const resolved: Mission = {...mission, status: outcome}
+    await redis.set(missionKey(postId), JSON.stringify(resolved))
+    return resolved
+  }
+  const nextWave = mission.wave + 1
+  await spawnWave(postId, nextWave, mission.totalWaves)
+  const advanced: Mission = {...mission, wave: nextWave}
+  await redis.set(missionKey(postId), JSON.stringify(advanced))
+  return advanced
+}
+
+/** A player's shot lands on an NPC — hull decrement (atomic), death/reward/wave-advance on a kill, always ends by broadcasting the fresh mission state. */
+export async function applyPlayerDamageToNpc(
+  postId: string,
+  shooterUserId: string,
+  npc: NpcState,
+  damage: number,
+): Promise<void> {
+  const existingRaw = await redis.get(missionKey(postId))
+  if (!existingRaw) return
+  let mission = JSON.parse(existingRaw) as Mission
+  if (mission.status !== 'active') return
+
+  const hull = Math.max(
+    0,
+    await redis.hIncrBy(npcHullKey(postId), npc.npcId, -damage),
+  )
+  if (!mission.participants.includes(shooterUserId)) {
+    mission = {...mission, participants: [...mission.participants, shooterUserId]}
+    await redis.set(missionKey(postId), JSON.stringify(mission))
+  }
+
+  if (hull > 0) {
+    await broadcastMission(postId, await toMissionRsp(postId, mission))
+    return
+  }
+
+  await Promise.all([
+    redis.hDel(npcsKey(postId), [npc.npcId]),
+    redis.hDel(npcHullKey(postId), [npc.npcId]),
+  ])
+  await grantCombatReward(shooterUserId, npc.kind === 'capital' ? 'kill' : 'hit')
+  mission = await spawnNextWaveIfClear(postId, mission)
+  await broadcastMission(postId, await toMissionRsp(postId, mission))
 }
