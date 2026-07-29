@@ -1,6 +1,12 @@
 import {connectRealtime} from '@devvit/web/client'
 import * as Phaser from 'phaser'
-import type {PlayerState, RealtimeMsg, WeaponMode} from '../shared/api.ts'
+import type {
+  MissionRsp,
+  NpcState,
+  PlayerState,
+  RealtimeMsg,
+  WeaponMode,
+} from '../shared/api.ts'
 import {
   AUTOCANNON_COOLDOWN_MS,
   BURST_COOLDOWN_MS,
@@ -94,6 +100,9 @@ export class SectorScene extends Phaser.Scene {
   private pilotPanelOpen = false
   private hudPulse!: Phaser.GameObjects.Text
   private pulseHideEvent: Phaser.Time.TimerEvent | null = null
+  private npcs = new Map<string, Phaser.GameObjects.Image>()
+  private starbase: Phaser.GameObjects.Image | null = null
+  private hudMission!: Phaser.GameObjects.Text
 
   constructor() {
     super('sector')
@@ -105,6 +114,30 @@ export class SectorScene extends Phaser.Scene {
     this.load.image('transport', 'assets/ships/transport.webp')
     this.load.image('pathfinder', 'assets/ships/pathfinder.webp')
     this.load.image('tender', 'assets/ships/tender.webp')
+    this.load.image(
+      'npc-raider-1',
+      'assets/ships/Menta-Pirates/pirate_standard/1.webp',
+    )
+    this.load.image(
+      'npc-raider-2',
+      'assets/ships/Menta-Pirates/pirate_standard/2.webp',
+    )
+    this.load.image(
+      'npc-raider-3',
+      'assets/ships/Menta-Pirates/pirate_standard/3.webp',
+    )
+    this.load.image(
+      'npc-raider-4',
+      'assets/ships/Menta-Pirates/pirate_standard/4.webp',
+    )
+    this.load.image(
+      'npc-capital',
+      'assets/ships/Menta-Pirates/pirate_capital_ship/Black Horizon.webp',
+    )
+    this.load.image(
+      'starbase',
+      'assets/ships/Menta-Merchant/civilian_planetary_defenses/civilian-planetary-turret.webp',
+    )
   }
 
   async create(): Promise<void> {
@@ -170,6 +203,16 @@ export class SectorScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(50)
       .setAlpha(0)
+    this.hudMission = this.add
+      .text(W / 2, H - 12, '', {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        color: '#ff9500',
+        align: 'center',
+      })
+      .setOrigin(0.5, 1)
+      .setScrollFactor(0)
+      .setDepth(50)
     this.add
       .text(
         W - 12,
@@ -285,6 +328,7 @@ export class SectorScene extends Phaser.Scene {
 
     for (const p of init.others) this.spawnRemote(p)
     this.updateCountHud()
+    if (init.mission) this.renderMission(init.mission)
 
     connectRealtime<RealtimeMsg>({
       channel: init.channel,
@@ -536,6 +580,63 @@ export class SectorScene extends Phaser.Scene {
     )
   }
 
+  private renderMission(mission: MissionRsp): void {
+    if (!this.starbase) {
+      this.starbase = this.add
+        .image(0, 0, 'starbase')
+        .setDisplaySize(64, 64)
+        .setDepth(15)
+    }
+
+    const seenIds = new Set<string>()
+    for (const npc of mission.npcs) {
+      seenIds.add(npc.npcId)
+      this.renderNpc(npc)
+    }
+    for (const [npcId, sprite] of this.npcs) {
+      if (!seenIds.has(npcId)) {
+        sprite.destroy()
+        this.npcs.delete(npcId)
+      }
+    }
+
+    const statusLine =
+      mission.status === 'won'
+        ? 'STARBASE SECURED'
+        : mission.status === 'lost'
+          ? 'STARBASE LOST'
+          : `WAVE ${mission.wave}/${mission.totalWaves}`
+    this.hudMission.setText(
+      `${statusLine}   STARBASE HULL ${Math.max(0, mission.starbaseHull)}/${mission.starbaseMaxHull}`,
+    )
+  }
+
+  private renderNpc(npc: NpcState): void {
+    const key =
+      npc.kind === 'capital' ? 'npc-capital' : this.raiderKeyFor(npc.npcId)
+    let sprite = this.npcs.get(npc.npcId)
+    if (!sprite) {
+      sprite = this.add
+        .image(npc.x, npc.y, key)
+        .setDisplaySize(
+          npc.kind === 'capital' ? 80 : 40,
+          npc.kind === 'capital' ? 80 : 40,
+        )
+        .setDepth(16)
+      this.npcs.set(npc.npcId, sprite)
+    }
+    sprite.setPosition(npc.x, npc.y)
+    sprite.rotation = npc.rotation
+  }
+
+  /** Deterministic per-NPC pick among the 4 raider art variants, stable across re-renders of the same npcId. */
+  private raiderKeyFor(npcId: string): string {
+    let hash = 0
+    for (let i = 0; i < npcId.length; i++)
+      hash = (hash * 31 + npcId.charCodeAt(i)) >>> 0
+    return `npc-raider-${(hash % 4) + 1}`
+  }
+
   private spawnRemote(p: PlayerState): void {
     if (p.userId === this.player?.userId) return
     const existing = this.others.get(p.userId)
@@ -637,6 +738,8 @@ export class SectorScene extends Phaser.Scene {
       if (msg.targetUserId === this.player?.userId) this.flashDamage()
     } else if (msg.type === 'flak_intercept') {
       this.fizzleMiss(msg.x, msg.y)
+    } else if (msg.type === 'mission_state') {
+      this.renderMission(msg.mission)
     }
   }
 
