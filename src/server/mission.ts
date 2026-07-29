@@ -39,6 +39,11 @@ function waveClaimKey(postId: string): string {
   return `sector:${postId}:wave-claim`
 }
 
+/** Atomic per-time-window claim so only one concurrent caller actually runs a given tick — see tickMission. */
+function tickClaimKey(postId: string): string {
+  return `sector:${postId}:tick-claim`
+}
+
 const STARBASE_MAX_HULL = 500
 const RAIDER_HULL = 60
 const CAPITAL_HULL = 400
@@ -321,10 +326,14 @@ export async function applyPlayerDamageToNpc(
     return
   }
 
-  await Promise.all([
-    redis.hDel(npcsKey(postId), [npc.npcId]),
-    redis.hDel(npcHullKey(postId), [npc.npcId]),
-  ])
+  const removed = await redis.hDel(npcsKey(postId), [npc.npcId])
+  await redis.hDel(npcHullKey(postId), [npc.npcId])
+  if (removed !== 1) {
+    // Another concurrent hit already claimed this kill — this shot landed on an already-dead NPC.
+    await broadcastMission(postId, await toMissionRsp(postId, mission))
+    return
+  }
+
   await grantCombatReward(
     shooterUserId,
     npc.kind === 'capital' ? 'kill' : 'hit',
@@ -363,8 +372,19 @@ export async function tickMission(postId: string): Promise<void> {
   if (mission.status !== 'active') return
 
   const now = Date.now()
-  if (now - mission.lastTickAt < MIN_TICK_INTERVAL_MS) return
-  const dt = Math.min((now - mission.lastTickAt) / 1000, MAX_TICK_DT_SEC)
+  const windowId = Math.floor(now / MIN_TICK_INTERVAL_MS)
+  const claimed = await redis.hSetNX(
+    tickClaimKey(postId),
+    String(windowId),
+    '1',
+  )
+  if (claimed !== 1) return // another concurrent caller already ticked this window
+  await redis.hDel(tickClaimKey(postId), [String(windowId - 1)]) // bound the hash to ~1-2 fields, self-pruning
+
+  const dt = Math.min(
+    Math.max((now - mission.lastTickAt) / 1000, 0),
+    MAX_TICK_DT_SEC,
+  )
   mission = {...mission, lastTickAt: now}
   await redis.set(missionKey(postId), JSON.stringify(mission))
 
@@ -409,7 +429,9 @@ export async function tickMission(postId: string): Promise<void> {
         await redis.incrBy(starbaseHullKey(postId), -damage)
       }
     }
-    await redis.hSet(npcsKey(postId), {[npc.npcId]: JSON.stringify(npc)})
+    if ((await redis.hGet(npcsKey(postId), npc.npcId)) !== undefined) {
+      await redis.hSet(npcsKey(postId), {[npc.npcId]: JSON.stringify(npc)})
+    }
   }
 
   const starbaseHull = await readStarbaseHull(postId)

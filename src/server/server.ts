@@ -729,7 +729,10 @@ async function routeMenuNewScrimmage(): Promise<UiResponse> {
 }
 
 async function routeAppInstall(): Promise<TriggerResponse> {
-  await reddit.submitCustomPost({title: context.appSlug})
+  await reddit.submitCustomPost({
+    title: context.appSlug,
+    postData: {kind: 'sector', theme: pickSectorTheme()},
+  })
   return {}
 }
 
