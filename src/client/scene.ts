@@ -1,9 +1,13 @@
 import {connectRealtime} from '@devvit/web/client'
 import * as Phaser from 'phaser'
-import type {PlayerState, RealtimeMsg} from '../shared/api.ts'
+import type {PlayerState, RealtimeMsg, WeaponMode} from '../shared/api.ts'
 import {
+  AUTOCANNON_COOLDOWN_MS,
+  BURST_COOLDOWN_MS,
+  FLAK_COOLDOWN_MS,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
+  PLASMA_COOLDOWN_MS,
   SHIP_WEAPONS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
@@ -29,6 +33,15 @@ const DRAG = 0.985
 const MAX_SPEED = 260
 const TURN_SPEED = 3.6
 const MOVE_SEND_MS = 140
+
+const WEAPON_COOLDOWN_MS: Record<WeaponMode, number> = {
+  laser: LASER_COOLDOWN_MS,
+  torpedo: TORPEDO_COOLDOWN_MS,
+  autocannon: AUTOCANNON_COOLDOWN_MS,
+  burst: BURST_COOLDOWN_MS,
+  plasma: PLASMA_COOLDOWN_MS,
+  flak: FLAK_COOLDOWN_MS,
+}
 
 const SHIP_LABEL: Record<PlayerState['line'], string> = {
   fighter: 'FIGHTER',
@@ -191,6 +204,14 @@ export class SectorScene extends Phaser.Scene {
         34,
         'PLT',
         () => void this.togglePilotPanel(),
+      )
+      new TouchButton(
+        this,
+        W - 115,
+        H - 260,
+        34,
+        'ABL',
+        () => void fetchAbility(),
       )
     }
 
@@ -499,6 +520,16 @@ export class SectorScene extends Phaser.Scene {
     this.time.delayedCall(160, () => sprite.clearTint())
   }
 
+  private flashAbility(userId: string): void {
+    const sprite =
+      userId === this.player?.userId
+        ? this.ship
+        : this.others.get(userId)?.sprite
+    if (!sprite) return
+    sprite.setTint(0x66ccff).setTintMode(Phaser.TintModes.FILL)
+    this.time.delayedCall(160, () => sprite.clearTint())
+  }
+
   private updateCountHud(): void {
     this.hudCount.setText(
       `SECTOR · ${this.others.size + 1} pilot${this.others.size === 0 ? '' : 's'}`,
@@ -567,10 +598,10 @@ export class SectorScene extends Phaser.Scene {
     } else if (msg.type === 'shot') {
       if (msg.userId === this.player?.userId) {
         // Already drawn optimistically the instant the local player fired.
-      } else if (msg.mode === 'laser') {
-        this.fireLaser(msg.x, msg.y, msg.rotation)
-      } else {
+      } else if (msg.mode === 'torpedo') {
         this.fireTorpedo(msg.x, msg.y, msg.rotation, msg.travelMs)
+      } else {
+        this.fireLaser(msg.x, msg.y, msg.rotation)
       }
     } else if (msg.type === 'miss') {
       this.fizzleMiss(msg.x, msg.y)
@@ -599,6 +630,8 @@ export class SectorScene extends Phaser.Scene {
         this.updateScoreHud()
       }
       this.flashHeal(msg.targetUserId)
+    } else if (msg.type === 'ability') {
+      this.flashAbility(msg.userId)
     } else if (msg.type === 'mine_detonated') {
       this.fizzleMiss(msg.x, msg.y)
       if (msg.targetUserId === this.player?.userId) this.flashDamage()
@@ -636,7 +669,7 @@ export class SectorScene extends Phaser.Scene {
     const primaryWeapon = weapons[0]
     const secondaryWeapon = weapons[1]
     if (primaryWeapon && (this.keys.laser.isDown || this.touchLaser?.isDown)) {
-      if (nowMs - this.lastLaserFiredAt > LASER_COOLDOWN_MS) {
+      if (nowMs - this.lastLaserFiredAt > WEAPON_COOLDOWN_MS[primaryWeapon]) {
         this.lastLaserFiredAt = nowMs
         if (primaryWeapon === 'torpedo') {
           this.fireTorpedo(
@@ -655,7 +688,10 @@ export class SectorScene extends Phaser.Scene {
       secondaryWeapon &&
       (this.keys.torpedo.isDown || this.touchMissile?.isDown)
     ) {
-      if (nowMs - this.lastTorpedoFiredAt > TORPEDO_COOLDOWN_MS) {
+      if (
+        nowMs - this.lastTorpedoFiredAt >
+        WEAPON_COOLDOWN_MS[secondaryWeapon]
+      ) {
         this.lastTorpedoFiredAt = nowMs
         this.fireTorpedo(
           this.ship.x,

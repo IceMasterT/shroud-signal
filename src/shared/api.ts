@@ -78,7 +78,7 @@ export const SHIP_WEAPONS: Record<ShipLine, readonly WeaponMode[]> = {
   tender: ['flak'],
 }
 
-/** Per-line combat multipliers for battle arenas only — free-play sectors don't use these. */
+/** Per-line combat multipliers. Sector Mode adopts `dmgMul` (via computeDamage) for weapon damage, but not `hullMul` — max hull stays the flat 100 baseline everywhere in Sector Mode. */
 export type ShipStats = {speedMul: number; hullMul: number; dmgMul: number}
 export const SHIP_STATS: Record<ShipLine, ShipStats> = {
   fighter: {speedMul: 1.2, hullMul: 0.8, dmgMul: 1.15},

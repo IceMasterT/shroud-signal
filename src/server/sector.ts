@@ -176,6 +176,8 @@ export async function getOrCreatePlayer(
     p.line = line
     p.lastLaserAt = p.lastLaserAt ?? 0
     p.lastTorpedoAt = p.lastTorpedoAt ?? 0
+    p.lastAbilityAt = p.lastAbilityAt ?? 0
+    p.abilityActiveUntil = p.abilityActiveUntil ?? 0
     p.team = p.team ?? null
     p.kills = p.kills ?? 0
     await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(p)})
