@@ -11,6 +11,7 @@ import {
   BURST_COOLDOWN_MS,
   BURST_RANGE,
   FLAK_COOLDOWN_MS,
+  FLAK_INTERCEPT_RANGE,
   FLAK_RANGE,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
@@ -112,6 +113,10 @@ function scoreKey(postId: string): string {
 
 function killsKey(postId: string): string {
   return `sector:${postId}:kills`
+}
+
+function torpedoesKey(postId: string): string {
+  return `sector:${postId}:torpedoes`
 }
 
 function leaderboardKey(subredditId: string): string {
@@ -318,6 +323,50 @@ export async function topPilots(
   }))
 }
 
+/** A torpedo in flight, tracked so a Flak Battery can find and destroy it before it lands. */
+type PendingTorpedo = {
+  shooterId: string
+  x: number
+  y: number
+  impactX: number
+  impactY: number
+  firedAt: number
+  resolveAt: number
+}
+
+/** Scans in-flight torpedoes for one within Flak range (interpolating its current position from firedAt/resolveAt) and destroys it. Returns whether one was found — if so, the Flak shot is consumed and no shotgun blast fires this trigger pull. Sector Mode has no teams, so "not mine" (not "not my team's") is the only exclusion. */
+async function tryFlakIntercept(
+  postId: string,
+  tender: PlayerState,
+  now: number,
+): Promise<boolean> {
+  const raw = await redis.hGetAll(torpedoesKey(postId))
+  let bestId: string | undefined
+  let bestDist = Infinity
+  for (const [torpedoId, json] of Object.entries(raw ?? {})) {
+    const t = JSON.parse(json) as PendingTorpedo
+    if (t.shooterId === tender.userId) continue
+    const span = Math.max(1, t.resolveAt - t.firedAt)
+    const frac = Math.min(1, Math.max(0, (now - t.firedAt) / span))
+    const curX = t.x + (t.impactX - t.x) * frac
+    const curY = t.y + (t.impactY - t.y) * frac
+    const dist = Math.hypot(curX - tender.x, curY - tender.y)
+    if (dist > FLAK_INTERCEPT_RANGE || dist >= bestDist) continue
+    bestDist = dist
+    bestId = torpedoId
+  }
+  if (!bestId) return false
+  const deleted = await redis.hDel(torpedoesKey(postId), [bestId])
+  if (deleted === 0) return false // race: already resolved or intercepted first
+  await broadcast(postId, {
+    type: 'flak_intercept',
+    userId: tender.userId,
+    x: tender.x,
+    y: tender.y,
+  })
+  return true
+}
+
 /**
  * Fires the shooter's weapon. Deliberately takes no client-supplied position —
  * it fires from the shooter's own authoritative last-known state (as recorded
@@ -373,6 +422,8 @@ export async function fireWeapon(
   const dirX = Math.cos(rotation - Math.PI / 2)
   const dirY = Math.sin(rotation - Math.PI / 2)
   const others = await listOtherPlayers(postId, shooterId)
+
+  if (mode === 'flak' && (await tryFlakIntercept(postId, shooter, now))) return
 
   if (mode !== 'torpedo') {
     const tuning = HITSCAN_TUNING[mode]
@@ -432,6 +483,19 @@ export async function fireWeapon(
   const travelMs = (travelDistance / TORPEDO_SPEED) * 1000
   const impactX = x + dirX * travelDistance
   const impactY = y + dirY * travelDistance
+  const torpedoId = `${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  const pending: PendingTorpedo = {
+    shooterId,
+    x,
+    y,
+    impactX,
+    impactY,
+    firedAt: now,
+    resolveAt: now + travelMs,
+  }
+  await redis.hSet(torpedoesKey(postId), {
+    [torpedoId]: JSON.stringify(pending),
+  })
   await broadcast(postId, {
     type: 'shot',
     userId: shooterId,
@@ -445,6 +509,7 @@ export async function fireWeapon(
     resolveTorpedoImpact(
       postId,
       subredditId,
+      torpedoId,
       shooterId,
       shooterUsername,
       impactX,
@@ -460,11 +525,15 @@ export async function fireWeapon(
 async function resolveTorpedoImpact(
   postId: string,
   subredditId: string,
+  torpedoId: string,
   shooterId: string,
   shooterUsername: string,
   impactX: number,
   impactY: number,
 ): Promise<void> {
+  const deleted = await redis.hDel(torpedoesKey(postId), [torpedoId])
+  if (deleted === 0) return // intercepted by flak before arrival
+
   const shooterJson = await redis.hGet(playersKey(postId), shooterId)
   if (!shooterJson) return
   const shooter = JSON.parse(shooterJson) as PlayerState
