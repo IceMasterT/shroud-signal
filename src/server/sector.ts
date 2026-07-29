@@ -8,6 +8,7 @@ import type {
 import {
   AUTOCANNON_COOLDOWN_MS,
   AUTOCANNON_RANGE,
+  BULWARK_DURATION_MS,
   BURST_COOLDOWN_MS,
   BURST_RANGE,
   FLAK_COOLDOWN_MS,
@@ -15,14 +16,23 @@ import {
   FLAK_RANGE,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
+  OVERCHARGE_DURATION_MS,
   PLASMA_COOLDOWN_MS,
   PLASMA_RANGE,
   SHIP_WEAPONS,
+  TENDER_HEAL_AMOUNT,
+  TENDER_HEAL_RANGE,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
   TORPEDO_SPEED,
 } from '../shared/api.ts'
-import {computeDamage} from './abilities.ts'
+import {
+  abilityReady,
+  computeDamage,
+  type Mine,
+  mineTriggeredBy,
+  nearestAlly,
+} from './abilities.ts'
 import {
   applyDeathPenaltyFor,
   getOrCreatePilotProfile,
@@ -117,6 +127,10 @@ function killsKey(postId: string): string {
 
 function torpedoesKey(postId: string): string {
   return `sector:${postId}:torpedoes`
+}
+
+function minesKey(postId: string): string {
+  return `sector:${postId}:mines`
 }
 
 function leaderboardKey(subredditId: string): string {
@@ -241,9 +255,10 @@ export async function listOtherPlayers(
   return out
 }
 
-/** Persists a position/rotation update and broadcasts it to the sector. */
+/** Persists a position/rotation update and broadcasts it to the sector, then checks whether the new position triggered a mine. */
 export async function movePlayer(
   postId: string,
+  subredditId: string,
   userId: string,
   x: number,
   y: number,
@@ -257,7 +272,100 @@ export async function movePlayer(
   player.rotation = rotation
   await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(player)})
   await broadcast(postId, {type: 'move', player})
+
+  const minesRaw = await redis.hGetAll(minesKey(postId))
+  const mines: Mine[] = Object.values(minesRaw ?? {}).map(
+    json => JSON.parse(json) as Mine,
+  )
+  // Sector Mode has no teams, so mineTriggeredBy's team check never excludes
+  // anyone (every mine is stored with a placeholder team, every player has
+  // team: null) — excluding the mine's own owner has to be done explicitly here.
+  const triggered = mineTriggeredBy(mines, player)
+  if (!triggered || triggered.ownerId === userId) return player
+  const deleted = await redis.hDel(minesKey(postId), [triggered.mineId])
+  if (deleted === 0) return player // race: already triggered by someone else
+  const ownerJson = await redis.hGet(playersKey(postId), triggered.ownerId)
+  if (!ownerJson) return player
+  const owner = JSON.parse(ownerJson) as PlayerState
+  await broadcast(postId, {
+    type: 'mine_detonated',
+    mineId: triggered.mineId,
+    targetUserId: userId,
+    x: triggered.x,
+    y: triggered.y,
+  })
+  await applyDamage(postId, subredditId, owner, owner.username, player, TORPEDO_DAMAGE)
   return player
+}
+
+/**
+ * Activates the caller's ship line's active ability, gated by its own
+ * cooldown. Mirrors activateAbility in match.ts, adapted for Sector Mode's
+ * flat 100-hull baseline (heals cap at START_HULL, not a per-line max) and
+ * lack of teams (mines are placed with a placeholder team and excluded by
+ * owner instead, in movePlayer).
+ */
+export async function activateAbility(
+  postId: string,
+  userId: string,
+): Promise<void> {
+  const existing = await redis.hGet(playersKey(postId), userId)
+  if (!existing) throw new Error('not in this sector')
+  const shooter = JSON.parse(existing) as PlayerState
+
+  const now = Date.now()
+  if (!abilityReady(shooter.lastAbilityAt, shooter.line, now)) {
+    throw new Error('ability is on cooldown')
+  }
+  shooter.lastAbilityAt = now
+
+  if (shooter.line === 'fighter' || shooter.line === 'transport') {
+    const duration =
+      shooter.line === 'fighter' ? OVERCHARGE_DURATION_MS : BULWARK_DURATION_MS
+    shooter.abilityActiveUntil = now + duration
+  }
+
+  await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(shooter)})
+
+  if (shooter.line === 'tender') {
+    const allies = await listOtherPlayers(postId, userId)
+    const target = nearestAlly(allies, shooter, TENDER_HEAL_RANGE)
+    if (target) {
+      const current = await redis.hGet(hullKey(postId), target.userId)
+      const healed = Math.min(
+        START_HULL,
+        Number(current ?? START_HULL) + TENDER_HEAL_AMOUNT,
+      )
+      await redis.hSet(hullKey(postId), {[target.userId]: String(healed)})
+      await broadcast(postId, {
+        type: 'heal',
+        targetUserId: target.userId,
+        healerUserId: userId,
+        hull: healed,
+      })
+    }
+  }
+
+  if (shooter.line === 'miner') {
+    const mineId = `${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const mine: Mine = {
+      mineId,
+      ownerId: userId,
+      team: 'A', // Sector Mode has no teams; movePlayer excludes self-triggering by ownerId instead.
+      x: shooter.x,
+      y: shooter.y,
+    }
+    await redis.hSet(minesKey(postId), {[mineId]: JSON.stringify(mine)})
+    await broadcast(postId, {
+      type: 'mine_placed',
+      mineId,
+      ownerId: userId,
+      x: shooter.x,
+      y: shooter.y,
+    })
+  }
+
+  await broadcast(postId, {type: 'ability', userId, line: shooter.line})
 }
 
 /** Removes a player from the sector's active set and tells everyone else. */
