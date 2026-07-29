@@ -6,12 +6,22 @@ import type {
   WeaponMode,
 } from '../shared/api.ts'
 import {
+  AUTOCANNON_COOLDOWN_MS,
+  AUTOCANNON_RANGE,
+  BURST_COOLDOWN_MS,
+  BURST_RANGE,
+  FLAK_COOLDOWN_MS,
+  FLAK_RANGE,
   LASER_COOLDOWN_MS,
   LASER_RANGE,
+  PLASMA_COOLDOWN_MS,
+  PLASMA_RANGE,
+  SHIP_WEAPONS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
   TORPEDO_SPEED,
 } from '../shared/api.ts'
+import {computeDamage} from './abilities.ts'
 import {
   applyDeathPenaltyFor,
   getOrCreatePilotProfile,
@@ -29,6 +39,56 @@ const KILL_SCORE = 40
 const TORPEDO_DAMAGE = 55
 const TORPEDO_IMPACT_RADIUS = 100 // how far off the flight line a target may be and still be caught
 const TORPEDO_AIM_HALF_ANGLE = 0.4
+
+// Damage/angle tuning for the battle-arena weapons, mirrored from match.ts's
+// own private HITSCAN_TUNING — kept as an independent copy rather than a
+// shared export, matching this codebase's existing precedent of sector.ts
+// and match.ts each independently declaring baseline tuning (e.g. START_HULL).
+const AUTOCANNON_DAMAGE = 14
+const AUTOCANNON_HALF_ANGLE = 0.3
+const BURST_DAMAGE = 30
+const BURST_HALF_ANGLE = 0.35
+const PLASMA_DAMAGE = 30
+const PLASMA_HALF_ANGLE = 0.25
+const FLAK_SHOTGUN_DAMAGE = 38
+const FLAK_HALF_ANGLE = 0.5
+
+/** Tuning for every hit-scan (instant, no travel time) weapon. Torpedo is handled separately — it's the only projectile with travel time. */
+const HITSCAN_TUNING: Record<
+  Exclude<WeaponMode, 'torpedo'>,
+  {damage: number; cooldownMs: number; range: number; halfAngle: number}
+> = {
+  laser: {
+    damage: LASER_DAMAGE,
+    cooldownMs: LASER_COOLDOWN_MS,
+    range: LASER_RANGE,
+    halfAngle: LASER_HALF_ANGLE,
+  },
+  autocannon: {
+    damage: AUTOCANNON_DAMAGE,
+    cooldownMs: AUTOCANNON_COOLDOWN_MS,
+    range: AUTOCANNON_RANGE,
+    halfAngle: AUTOCANNON_HALF_ANGLE,
+  },
+  burst: {
+    damage: BURST_DAMAGE,
+    cooldownMs: BURST_COOLDOWN_MS,
+    range: BURST_RANGE,
+    halfAngle: BURST_HALF_ANGLE,
+  },
+  plasma: {
+    damage: PLASMA_DAMAGE,
+    cooldownMs: PLASMA_COOLDOWN_MS,
+    range: PLASMA_RANGE,
+    halfAngle: PLASMA_HALF_ANGLE,
+  },
+  flak: {
+    damage: FLAK_SHOTGUN_DAMAGE,
+    cooldownMs: FLAK_COOLDOWN_MS,
+    range: FLAK_RANGE,
+    halfAngle: FLAK_HALF_ANGLE,
+  },
+}
 
 /** Devvit realtime channel names may only contain letters, numbers, and underscores -- no colons. */
 export function sectorChannel(postId: string): string {
@@ -281,18 +341,30 @@ export async function fireWeapon(
   subredditId: string,
   shooterId: string,
   shooterUsername: string,
-  mode: WeaponMode,
+  requestedMode: WeaponMode,
 ): Promise<void> {
   const existing = await redis.hGet(playersKey(postId), shooterId)
   if (!existing) return
   const shooter = JSON.parse(existing) as PlayerState
 
+  // Authoritative on the shooter's own line, not whatever the client asked
+  // to fire — mirrors fireWeaponInMatch's fallback so a client can't fire a
+  // weapon its ship doesn't have. lastLaserAt/lastTorpedoAt are reused as
+  // generic primary/secondary weapon-slot cooldown trackers, same as match.ts.
+  const weapons = SHIP_WEAPONS[shooter.line]
+  const firstWeapon = weapons[0]
+  if (!firstWeapon) return // unreachable — every line has at least one weapon
+  const mode = weapons.includes(requestedMode) ? requestedMode : firstWeapon
+
   const now = Date.now()
-  if (mode === 'laser') {
-    if (now - (shooter.lastLaserAt ?? 0) < LASER_COOLDOWN_MS) return
+  const isPrimary = mode === firstWeapon
+  const cooldownMs =
+    mode === 'torpedo' ? TORPEDO_COOLDOWN_MS : HITSCAN_TUNING[mode].cooldownMs
+  if (isPrimary) {
+    if (now - (shooter.lastLaserAt ?? 0) < cooldownMs) return
     shooter.lastLaserAt = now
   } else {
-    if (now - (shooter.lastTorpedoAt ?? 0) < TORPEDO_COOLDOWN_MS) return
+    if (now - (shooter.lastTorpedoAt ?? 0) < cooldownMs) return
     shooter.lastTorpedoAt = now
   }
   await redis.hSet(playersKey(postId), {[shooterId]: JSON.stringify(shooter)})
@@ -302,7 +374,8 @@ export async function fireWeapon(
   const dirY = Math.sin(rotation - Math.PI / 2)
   const others = await listOtherPlayers(postId, shooterId)
 
-  if (mode === 'laser') {
+  if (mode !== 'torpedo') {
+    const tuning = HITSCAN_TUNING[mode]
     await broadcast(postId, {
       type: 'shot',
       userId: shooterId,
@@ -318,10 +391,10 @@ export async function fireWeapon(
       const dx = p.x - x
       const dy = p.y - y
       const distance = Math.hypot(dx, dy)
-      if (distance === 0 || distance > LASER_RANGE) continue
+      if (distance === 0 || distance > tuning.range) continue
       const dot = (dx / distance) * dirX + (dy / distance) * dirY
       const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
-      if (angle > LASER_HALF_ANGLE) continue
+      if (angle > tuning.halfAngle) continue
       if (!closest || distance < closest.distance)
         closest = {player: p, distance}
     }
@@ -329,10 +402,10 @@ export async function fireWeapon(
     await applyDamage(
       postId,
       subredditId,
-      shooterId,
+      shooter,
       shooterUsername,
       closest.player,
-      LASER_DAMAGE,
+      tuning.damage,
     )
     return
   }
@@ -392,6 +465,10 @@ async function resolveTorpedoImpact(
   impactX: number,
   impactY: number,
 ): Promise<void> {
+  const shooterJson = await redis.hGet(playersKey(postId), shooterId)
+  if (!shooterJson) return
+  const shooter = JSON.parse(shooterJson) as PlayerState
+
   const others = await listOtherPlayers(postId, shooterId)
   let closest: {player: PlayerState; distance: number} | undefined
   for (const p of others) {
@@ -406,7 +483,7 @@ async function resolveTorpedoImpact(
   await applyDamage(
     postId,
     subredditId,
-    shooterId,
+    shooter,
     shooterUsername,
     closest.player,
     TORPEDO_DAMAGE,
@@ -416,11 +493,13 @@ async function resolveTorpedoImpact(
 async function applyDamage(
   postId: string,
   subredditId: string,
-  shooterId: string,
+  shooter: PlayerState,
   shooterUsername: string,
   target: PlayerState,
-  damage: number,
+  baseDamage: number,
 ): Promise<void> {
+  const damage = computeDamage(baseDamage, Date.now(), shooter, target)
+  const shooterId = shooter.userId
   const hull = Math.max(
     0,
     await redis.hIncrBy(hullKey(postId), target.userId, -damage),
