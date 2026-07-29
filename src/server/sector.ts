@@ -37,6 +37,7 @@ import {
   applyPlayerDamageToNpc,
   findClosestNpcInRadius,
   findClosestNpcInRange,
+  tickMission,
 } from './mission.ts'
 import {
   applyDeathPenaltyFor,
@@ -279,6 +280,7 @@ export async function movePlayer(
   player.rotation = rotation
   await redis.hSet(playersKey(postId), {[userId]: JSON.stringify(player)})
   await broadcast(postId, {type: 'move', player})
+  await tickMission(postId)
 
   const minesRaw = await redis.hGetAll(minesKey(postId))
   const mines: Mine[] = Object.values(minesRaw ?? {}).map(
@@ -544,6 +546,7 @@ export async function fireWeapon(
   const dirX = Math.cos(rotation - Math.PI / 2)
   const dirY = Math.sin(rotation - Math.PI / 2)
   const others = await listOtherPlayers(postId, shooterId)
+  await tickMission(postId)
 
   if (mode === 'flak' && (await tryFlakIntercept(postId, shooter, now))) return
 

@@ -3,10 +3,17 @@ import type {
   Mission,
   MissionRsp,
   NpcState,
+  PlayerState,
   SectorTheme,
   WeaponMode,
 } from '../shared/api.ts'
-import {HITSCAN_TUNING, WORLD_HALF, sectorChannel} from './sector.ts'
+import {
+  applyNpcDamageToPlayer,
+  HITSCAN_TUNING,
+  listOtherPlayers,
+  WORLD_HALF,
+  sectorChannel,
+} from './sector.ts'
 import {grantCombatReward} from './pilot.ts'
 
 function missionKey(postId: string): string {
@@ -317,5 +324,99 @@ export async function applyPlayerDamageToNpc(
   ])
   await grantCombatReward(shooterUserId, npc.kind === 'capital' ? 'kill' : 'hit')
   mission = await spawnNextWaveIfClear(postId, mission)
+  await broadcastMission(postId, await toMissionRsp(postId, mission))
+}
+
+const MIN_TICK_INTERVAL_MS = 200 // caps how often the reactive tick actually does work, however often movePlayer/fireWeapon fire
+const MAX_TICK_DT_SEC = 0.5 // guards against a huge jump if a sector goes quiet for a while
+
+function nearestPlayer(
+  npc: NpcState,
+  players: PlayerState[],
+  range: number,
+): PlayerState | undefined {
+  let closest: {player: PlayerState; distance: number} | undefined
+  for (const p of players) {
+    const distance = Math.hypot(p.x - npc.x, p.y - npc.y)
+    if (distance > range) continue
+    if (!closest || distance < closest.distance) closest = {player: p, distance}
+  }
+  return closest?.player
+}
+
+/**
+ * Runs on every movePlayer/fireWeapon call in a themed sector — there is no
+ * dedicated scheduler. Moves each alive NPC a step toward its target (the
+ * nearest aggro'd player, or the starbase at the origin if none is close
+ * enough) and fires if already in range with its cooldown elapsed.
+ */
+export async function tickMission(postId: string): Promise<void> {
+  const existingRaw = await redis.get(missionKey(postId))
+  if (!existingRaw) return
+  let mission = JSON.parse(existingRaw) as Mission
+  if (mission.status !== 'active') return
+
+  const now = Date.now()
+  if (now - mission.lastTickAt < MIN_TICK_INTERVAL_MS) return
+  const dt = Math.min((now - mission.lastTickAt) / 1000, MAX_TICK_DT_SEC)
+  mission = {...mission, lastTickAt: now}
+  await redis.set(missionKey(postId), JSON.stringify(mission))
+
+  const [npcs, players] = await Promise.all([
+    readNpcs(postId),
+    listOtherPlayers(postId, ''), // no "self" from the tick's perspective — '' excludes no real userId, so this returns every player in the sector
+  ])
+  if (npcs.length === 0) return
+
+  for (const npc of npcs) {
+    const tuning = HITSCAN_TUNING[npc.weapon]
+    const aggroRange = tuning.range * NPC_AGGRO_RANGE_MUL
+    const target = nearestPlayer(npc, players, aggroRange)
+    const targetX = target ? target.x : 0
+    const targetY = target ? target.y : 0
+    npc.targetUserId = target ? target.userId : null
+
+    const dx = targetX - npc.x
+    const dy = targetY - npc.y
+    const distance = Math.hypot(dx, dy)
+    const step = NPC_MOVE_UNITS_PER_SEC * dt
+    if (distance > step && distance > 0) {
+      npc.x += (dx / distance) * step
+      npc.y += (dy / distance) * step
+    } else {
+      npc.x = targetX
+      npc.y = targetY
+    }
+    npc.rotation = Math.atan2(dy, dx) + Math.PI / 2
+
+    const withinRange = distance <= tuning.range
+    const cooledDown = now - npc.lastFiredAt >= tuning.cooldownMs
+    if (withinRange && cooledDown) {
+      npc.lastFiredAt = now
+      const damage =
+        npc.kind === 'capital'
+          ? tuning.damage * CAPITAL_DAMAGE_MUL
+          : tuning.damage
+      if (target) {
+        await applyNpcDamageToPlayer(postId, npc.npcId, target, damage)
+      } else {
+        await redis.incrBy(starbaseHullKey(postId), -damage)
+      }
+    }
+    await redis.hSet(npcsKey(postId), {[npc.npcId]: JSON.stringify(npc)})
+  }
+
+  const starbaseHull = await readStarbaseHull(postId)
+  const outcome = evaluateMissionOutcome(
+    Math.max(0, starbaseHull),
+    mission.wave,
+    mission.totalWaves,
+    npcs.length,
+  )
+  if (outcome === 'lost') {
+    mission = {...mission, status: 'lost'}
+    await redis.set(missionKey(postId), JSON.stringify(mission))
+  }
+
   await broadcastMission(postId, await toMissionRsp(postId, mission))
 }
