@@ -40,7 +40,7 @@ import {
 } from './pilot.ts'
 
 const START_HULL = 100
-const WORLD_HALF = 900 // spawn/clamp bounds, world units from sector center
+export const WORLD_HALF = 900 // spawn/clamp bounds, world units from sector center
 
 const LASER_HALF_ANGLE = 0.3 // radians either side of facing — ~17°
 const LASER_DAMAGE = 20
@@ -64,8 +64,8 @@ const PLASMA_HALF_ANGLE = 0.25
 const FLAK_SHOTGUN_DAMAGE = 38
 const FLAK_HALF_ANGLE = 0.5
 
-/** Tuning for every hit-scan (instant, no travel time) weapon. Torpedo is handled separately — it's the only projectile with travel time. */
-const HITSCAN_TUNING: Record<
+/** Tuning for every hit-scan (instant, no travel time) weapon. Torpedo is handled separately — it's the only projectile with travel time. Exported so mission.ts's NPCs engage/fire at the exact same range/cooldown/damage a player with the same weapon would. */
+export const HITSCAN_TUNING: Record<
   Exclude<WeaponMode, 'torpedo'>,
   {damage: number; cooldownMs: number; range: number; halfAngle: number}
 > = {
