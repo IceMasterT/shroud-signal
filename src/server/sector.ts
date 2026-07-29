@@ -34,6 +34,11 @@ import {
   nearestAlly,
 } from './abilities.ts'
 import {
+  applyPlayerDamageToNpc,
+  findClosestNpcInRadius,
+  findClosestNpcInRange,
+} from './mission.ts'
+import {
   applyDeathPenaltyFor,
   getOrCreatePilotProfile,
   grantCombatReward,
@@ -566,6 +571,29 @@ export async function fireWeapon(
       if (!closest || distance < closest.distance)
         closest = {player: p, distance}
     }
+    const closestNpc = await findClosestNpcInRange(
+      postId,
+      x,
+      y,
+      dirX,
+      dirY,
+      tuning.range,
+    )
+    const npcDistance = closestNpc
+      ? Math.hypot(closestNpc.x - x, closestNpc.y - y)
+      : undefined
+    if (
+      closestNpc &&
+      (!closest || (npcDistance !== undefined && npcDistance < closest.distance))
+    ) {
+      await applyPlayerDamageToNpc(
+        postId,
+        shooterId,
+        closestNpc,
+        tuning.damage,
+      )
+      return
+    }
     if (!closest) return
     await applyDamage(
       postId,
@@ -661,6 +689,17 @@ async function resolveTorpedoImpact(
     const distance = Math.hypot(p.x - impactX, p.y - impactY)
     if (distance > TORPEDO_IMPACT_RADIUS) continue
     if (!closest || distance < closest.distance) closest = {player: p, distance}
+  }
+  const npc = await findClosestNpcInRadius(
+    postId,
+    impactX,
+    impactY,
+    TORPEDO_IMPACT_RADIUS,
+  )
+  const npcDistance = npc ? Math.hypot(npc.x - impactX, npc.y - impactY) : undefined
+  if (npc && (!closest || (npcDistance !== undefined && npcDistance < closest.distance))) {
+    await applyPlayerDamageToNpc(postId, shooterId, npc, TORPEDO_DAMAGE)
+    return
   }
   if (!closest) {
     await broadcast(postId, {type: 'miss', x: impactX, y: impactY})
