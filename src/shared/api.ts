@@ -247,6 +247,10 @@ export const SHIP_TIER_ASSET: Record<
 export type FireReq = {mode: WeaponMode}
 export type FireRsp = {ok: true}
 
+/** Activates the caller's ship line's active ability in a sector (Fighter's Overcharge, Transport's Bulwark, Tender's heal, Miner's mine, Pathfinder's radar ping). No payload — the line comes from the caller's own player state. */
+export type AbilityReq = Record<string, never>
+export type AbilityRsp = {ok: true}
+
 /** Broadcast on the realtime channel to every connected client in the sector. */
 export type RealtimeMsg =
   | {type: 'join'; player: PlayerState}
@@ -274,6 +278,17 @@ export type RealtimeMsg =
       xpGained: number
       creditsGained: number
     }
+  | {type: 'heal'; targetUserId: string; healerUserId: string; hull: number}
+  | {type: 'mine_placed'; mineId: string; ownerId: string; x: number; y: number}
+  | {
+      type: 'mine_detonated'
+      mineId: string
+      targetUserId: string
+      x: number
+      y: number
+    }
+  | {type: 'ability'; userId: string; line: ShipLine}
+  | {type: 'flak_intercept'; userId: string; x: number; y: number}
 
 /** Top pilots for the current subreddit, by score. */
 export type LeaderboardEntry = {username: string; score: number; kills: number}
@@ -490,6 +505,7 @@ export const Endpoint = {
   PilotProfile: 'api/pilot/profile',
   PilotChooseLine: 'api/pilot/choose-line',
   Move: 'api/move',
+  Ability: 'api/ability',
   Leave: 'api/leave',
   Score: 'api/score',
   Fire: 'api/fire',
@@ -517,6 +533,7 @@ export const EndpointMethod = {
   [Endpoint.PilotProfile]: 'GET',
   [Endpoint.PilotChooseLine]: 'POST',
   [Endpoint.Move]: 'POST',
+  [Endpoint.Ability]: 'POST',
   [Endpoint.Leave]: 'POST',
   [Endpoint.Score]: 'POST',
   [Endpoint.Fire]: 'POST',
