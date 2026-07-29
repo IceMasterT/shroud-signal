@@ -182,6 +182,47 @@ export type InitRsp = {
   channel: string
   player: PlayerState
   others: PlayerState[]
+  mission: MissionRsp | null
+}
+
+/** 'raider' = a regular wave pirate. 'capital' = the boss, exactly one, only on the final wave. */
+export type NpcKind = 'raider' | 'capital'
+
+/** One hostile currently alive in a sector's mission. `weapon` excludes 'torpedo' — NPCs are only ever assigned a hitscan weapon (see mission.ts's RAIDER_WEAPONS/CAPITAL_WEAPON), so this matches HITSCAN_TUNING's own key type exactly and lets mission.ts index it directly. */
+export type NpcState = {
+  npcId: string
+  kind: NpcKind
+  x: number
+  y: number
+  rotation: number
+  hull: number
+  maxHull: number
+  weapon: Exclude<WeaponMode, 'torpedo'>
+  lastFiredAt: number
+  targetUserId: string | null // null means "closing on/attacking the starbase," not a player
+}
+
+/**
+ * A sector's mission progress. Hull values live in dedicated atomic Redis
+ * keys, not here — see mission.ts — so this is only the rarely-changing
+ * bookkeeping. `theme`-specific objective fields (only `starbase-defense`'s
+ * for now) are flat fields rather than a discriminated union, since only one
+ * theme exists; a second theme is the natural point to introduce the union.
+ */
+export type Mission = {
+  theme: SectorTheme
+  wave: number // 1-based; the last wave is always the boss
+  totalWaves: number // randomly rolled 3-8 at mission start
+  participants: string[] // userIds who've dealt NPC damage — loot eligibility (later plan)
+  status: 'active' | 'won' | 'lost'
+  starbaseMaxHull: number
+  lastTickAt: number
+}
+
+/** `Mission` merged with the live NPC roster and hull values — what the client actually reads. */
+export type MissionRsp = Mission & {
+  npcs: NpcState[]
+  starbaseHull: number
 }
 
 /** Sent frequently (throttled client-side) as the player flies around. */
@@ -289,6 +330,7 @@ export type RealtimeMsg =
     }
   | {type: 'ability'; userId: string; line: ShipLine}
   | {type: 'flak_intercept'; userId: string; x: number; y: number}
+  | {type: 'mission_state'; mission: MissionRsp}
 
 /** Top pilots for the current subreddit, by score. */
 export type LeaderboardEntry = {username: string; score: number; kills: number}
@@ -302,9 +344,18 @@ export type ScoreRsp = {score: number}
 
 export type Team = 'A' | 'B'
 
+/**
+ * A sector's mission theme, assigned once at creation, for the sector's
+ * lifetime. A plain string union rather than a hardcoded pirate assumption —
+ * a future non-pirate theme just adds a new value. Sectors created before
+ * this existed never had `postData` set at all (`getPostKind()` returns
+ * `undefined` for them), which is exactly the signal for "no mission."
+ */
+export type SectorTheme = 'starbase-defense'
+
 /** postData.kind tags what a given post is, read via context.postData on both client and server. */
 export type PostKind =
-  | {kind: 'sector'}
+  | {kind: 'sector'; theme: SectorTheme}
   | {kind: 'challenge-setup'}
   | {kind: 'challenge'; challengeId: string; role: 'challenger' | 'target'}
   | {kind: 'match-arena'; matchId: string; side: Team}
