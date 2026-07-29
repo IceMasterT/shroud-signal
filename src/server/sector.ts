@@ -294,7 +294,14 @@ export async function movePlayer(
     x: triggered.x,
     y: triggered.y,
   })
-  await applyDamage(postId, subredditId, owner, owner.username, player, TORPEDO_DAMAGE)
+  await applyDamage(
+    postId,
+    subredditId,
+    owner,
+    owner.username,
+    player,
+    TORPEDO_DAMAGE,
+  )
   return player
 }
 

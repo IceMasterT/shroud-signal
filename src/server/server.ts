@@ -7,6 +7,7 @@ import type {
   UiResponse,
 } from '@devvit/web/shared'
 import {
+  type AbilityRsp,
   type ChallengeAction,
   type ChallengeStateRsp,
   type ChooseLineReq,
@@ -68,6 +69,7 @@ import {
 } from './match.ts'
 import {chooseLine, getOrCreatePilotProfile} from './pilot.ts'
 import {
+  activateAbility as activateSectorAbility,
   addScore,
   announceJoin,
   fireWeapon,
@@ -89,6 +91,7 @@ type AnyRsp =
   | PilotProfileRsp
   | ChooseLineRsp
   | MoveRsp
+  | AbilityRsp
   | ScoreRsp
   | FireRsp
   | LeaderboardRsp
@@ -169,6 +172,9 @@ async function route(
         break
       case Endpoint.Fire:
         rsp = await routeFire(reqMsg)
+        break
+      case Endpoint.Ability:
+        rsp = await routeAbility()
         break
       case Endpoint.Leaderboard:
         rsp = await routeLeaderboard()
@@ -287,6 +293,7 @@ async function routePilotChooseLine(
 async function routeMove(reqMsg: IncomingMessage): Promise<MoveRsp | ErrorRsp> {
   const postId = context.postId
   const userId = context.userId
+  const subredditId = context.subredditId
   if (!postId) return {error: 'no postId', status: 400}
   if (!userId) return {error: 'must be logged in', status: 401}
   const req = await readJson<MoveReq>(reqMsg)
@@ -302,7 +309,7 @@ async function routeMove(reqMsg: IncomingMessage): Promise<MoveRsp | ErrorRsp> {
   if (matchId) {
     await movePlayerInMatch(matchId, userId, req.x, req.y, req.rotation)
   } else {
-    await movePlayer(postId, userId, req.x, req.y, req.rotation)
+    await movePlayer(postId, subredditId, userId, req.x, req.y, req.rotation)
   }
   return {ok: true}
 }
@@ -354,15 +361,27 @@ async function routeFire(reqMsg: IncomingMessage): Promise<FireRsp | ErrorRsp> {
   if (matchId) {
     await fireWeaponInMatch(matchId, userId, req.mode)
   } else {
-    // Free-play sectors only ever have plain laser + torpedo — the newer
-    // battle-arena-only weapons (autocannon/burst/plasma/flak) don't apply here.
-    if (req.mode !== 'laser' && req.mode !== 'torpedo') {
-      return {error: 'invalid fire mode for a sector', status: 400}
-    }
+    // Sector Mode now grants every line its full Battle-Mode weapon kit —
+    // fireWeapon validates against the shooter's own line internally, the
+    // same way fireWeaponInMatch already does.
     const username = context.username ?? 'anonymous'
     await fireWeapon(postId, subredditId, userId, username, req.mode)
   }
   return {ok: true}
+}
+
+async function routeAbility(): Promise<AbilityRsp | ErrorRsp> {
+  const postId = context.postId
+  const userId = context.userId
+  if (!postId) return {error: 'no postId', status: 400}
+  if (!userId) return {error: 'must be logged in', status: 401}
+  try {
+    await activateSectorAbility(postId, userId)
+    return {ok: true}
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {error: msg, status: 400}
+  }
 }
 
 function isFiniteNumber(v: unknown): v is number {

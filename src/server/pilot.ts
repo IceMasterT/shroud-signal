@@ -13,7 +13,7 @@ function xpKey(userId: string): string {
 
 /** XP required to advance from `level` to `level + 1` — a gentle, ever-slowing climb rather than linear or explosive. */
 export function xpToNextLevel(level: number): number {
-  return Math.floor(100 * Math.pow(level, 1.4))
+  return Math.floor(100 * level ** 1.4)
 }
 
 /** Turns a raw lifetime XP total into a displayable level and progress toward the next one. */
