@@ -728,6 +728,49 @@ async function applyDamage(
   await broadcast(postId, {type: 'respawn', player: respawned})
 }
 
+/**
+ * An NPC (never another pilot) damaging a player — same hull/respawn/death-
+ * penalty handling as a PvP hit, but with no shooter pilot to score, credit,
+ * or reward (NPCs have no profile, so there's no PvP leaderboard score to
+ * credit either — hence no subredditId parameter, unlike applyDamage).
+ * Exported for mission.ts's reactive tick.
+ */
+export async function applyNpcDamageToPlayer(
+  postId: string,
+  npcId: string,
+  target: PlayerState,
+  damage: number,
+): Promise<void> {
+  const hull = Math.max(
+    0,
+    await redis.hIncrBy(hullKey(postId), target.userId, -damage),
+  )
+  await broadcast(postId, {
+    type: 'hit',
+    targetUserId: target.userId,
+    shooterUserId: npcId,
+    hull,
+  })
+  if (hull > 0) return
+
+  await applyDeathPenaltyFor(target.userId)
+  const spawn = randSpawn()
+  await redis.hSet(hullKey(postId), {[target.userId]: String(START_HULL)})
+  const targetKills = await readKills(postId, target.userId)
+  const respawned: PlayerState = {
+    ...target,
+    kills: targetKills,
+    hull: START_HULL,
+    x: spawn.x,
+    y: spawn.y,
+    rotation: 0,
+  }
+  await redis.hSet(playersKey(postId), {
+    [target.userId]: JSON.stringify(respawned),
+  })
+  await broadcast(postId, {type: 'respawn', player: respawned})
+}
+
 /** Grants Sector Mode combat XP/credits and tells the earning pilot's own client so it can show a toast — every other client on the channel gets the same message but ignores it, since the `userId` isn't theirs. */
 async function broadcastPilotReward(
   postId: string,
