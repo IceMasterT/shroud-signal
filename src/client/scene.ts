@@ -4,11 +4,13 @@ import type {PlayerState, RealtimeMsg} from '../shared/api.ts'
 import {
   LASER_COOLDOWN_MS,
   LASER_RANGE,
+  SHIP_WEAPONS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
   TORPEDO_SPEED,
 } from '../shared/api.ts'
 import {
+  fetchAbility,
   fetchFire,
   fetchInit,
   fetchLeaderboard,
@@ -56,6 +58,7 @@ export class SectorScene extends Phaser.Scene {
     right: Phaser.Input.Keyboard.Key
     laser: Phaser.Input.Keyboard.Key
     torpedo: Phaser.Input.Keyboard.Key
+    ability: Phaser.Input.Keyboard.Key
   }
   private lastLaserFiredAt = 0
   private lastTorpedoFiredAt = 0
@@ -115,6 +118,7 @@ export class SectorScene extends Phaser.Scene {
       right: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       laser: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
       torpedo: kb.addKey(Phaser.Input.Keyboard.KeyCodes.E),
+      ability: kb.addKey(Phaser.Input.Keyboard.KeyCodes.Q),
     }
 
     this.hudName = this.add
@@ -157,7 +161,7 @@ export class SectorScene extends Phaser.Scene {
       .text(
         W - 12,
         H - 12,
-        '[SPACE] LASER  ·  [E] MISSILE  ·  [L] LEADERBOARD  ·  [P] PILOT',
+        '[SPACE] FIRE  ·  [E] 2ND WEAPON  ·  [Q] ABILITY  ·  [L] LEADERBOARD  ·  [P] PILOT',
         {
           fontFamily: 'monospace',
           fontSize: '10px',
@@ -485,6 +489,16 @@ export class SectorScene extends Phaser.Scene {
     this.time.delayedCall(120, () => r.sprite.clearTint())
   }
 
+  private flashHeal(userId: string): void {
+    const sprite =
+      userId === this.player?.userId
+        ? this.ship
+        : this.others.get(userId)?.sprite
+    if (!sprite) return
+    sprite.setTint(0x66ffaa).setTintMode(Phaser.TintModes.FILL)
+    this.time.delayedCall(160, () => sprite.clearTint())
+  }
+
   private updateCountHud(): void {
     this.hudCount.setText(
       `SECTOR · ${this.others.size + 1} pilot${this.others.size === 0 ? '' : 's'}`,
@@ -579,6 +593,17 @@ export class SectorScene extends Phaser.Scene {
       } else {
         this.spawnRemote(msg.player)
       }
+    } else if (msg.type === 'heal') {
+      if (msg.targetUserId === this.player?.userId && this.player) {
+        this.player.hull = msg.hull
+        this.updateScoreHud()
+      }
+      this.flashHeal(msg.targetUserId)
+    } else if (msg.type === 'mine_detonated') {
+      this.fizzleMiss(msg.x, msg.y)
+      if (msg.targetUserId === this.player?.userId) this.flashDamage()
+    } else if (msg.type === 'flak_intercept') {
+      this.fizzleMiss(msg.x, msg.y)
     }
   }
 
@@ -607,14 +632,29 @@ export class SectorScene extends Phaser.Scene {
     }
 
     const nowMs = performance.now()
-    if (this.keys.laser.isDown || this.touchLaser?.isDown) {
+    const weapons = this.player ? SHIP_WEAPONS[this.player.line] : []
+    const primaryWeapon = weapons[0]
+    const secondaryWeapon = weapons[1]
+    if (primaryWeapon && (this.keys.laser.isDown || this.touchLaser?.isDown)) {
       if (nowMs - this.lastLaserFiredAt > LASER_COOLDOWN_MS) {
         this.lastLaserFiredAt = nowMs
-        this.fireLaser(this.ship.x, this.ship.y, this.ship.rotation)
-        void fetchFire({mode: 'laser'})
+        if (primaryWeapon === 'torpedo') {
+          this.fireTorpedo(
+            this.ship.x,
+            this.ship.y,
+            this.ship.rotation,
+            (TORPEDO_RANGE / TORPEDO_SPEED) * 1000,
+          )
+        } else {
+          this.fireLaser(this.ship.x, this.ship.y, this.ship.rotation)
+        }
+        void fetchFire({mode: primaryWeapon})
       }
     }
-    if (this.keys.torpedo.isDown || this.touchMissile?.isDown) {
+    if (
+      secondaryWeapon &&
+      (this.keys.torpedo.isDown || this.touchMissile?.isDown)
+    ) {
       if (nowMs - this.lastTorpedoFiredAt > TORPEDO_COOLDOWN_MS) {
         this.lastTorpedoFiredAt = nowMs
         this.fireTorpedo(
@@ -623,8 +663,11 @@ export class SectorScene extends Phaser.Scene {
           this.ship.rotation,
           (TORPEDO_RANGE / TORPEDO_SPEED) * 1000,
         )
-        void fetchFire({mode: 'torpedo'})
+        void fetchFire({mode: secondaryWeapon})
       }
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.keys.ability)) {
+      void fetchAbility()
     }
 
     const speed = Math.hypot(this.velX, this.velY)

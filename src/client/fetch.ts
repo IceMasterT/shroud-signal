@@ -1,4 +1,6 @@
 import {
+  type AbilityReq,
+  type AbilityRsp,
   type ChallengeStateRsp,
   type ChooseLineReq,
   type ChooseLineRsp,
@@ -143,6 +145,10 @@ export function fetchScore(req: ScoreReq): Promise<ScoreRsp | undefined> {
 
 export function fetchFire(req: FireReq): Promise<FireRsp | undefined> {
   return postJson<FireReq, FireRsp>(Endpoint.Fire, req)
+}
+
+export function fetchAbility(): Promise<AbilityRsp | ErrorRsp> {
+  return postJsonOrError<AbilityReq, AbilityRsp>(Endpoint.Ability, {})
 }
 
 export function fetchLeaderboard(): Promise<LeaderboardRsp | undefined> {
