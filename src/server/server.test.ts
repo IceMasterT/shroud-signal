@@ -74,6 +74,22 @@ test('inc', async () => {
   assert.deepEqual<IncCounterRsp>(await rsp.json(), {count: 1})
 })
 
+test('oversized body yields a clean 400, not a hung request', async () => {
+  // Body larger than MAX_BODY_BYTES (64 KiB) must reject cleanly through
+  // readJson -> onReq's catch-all, never hang. Regression for the size-guard
+  // that used to throw inside the stream 'data' listener.
+  const big = 'a'.repeat(128 * 1024)
+  const rsp = await fetch(`${serverURL}/${Endpoint.IncCounter}`, {
+    body: JSON.stringify({amount: 1, pad: big}),
+    headers: {'Content-Type': 'application/json'},
+    method: 'POST',
+  })
+  assert.equal(rsp.status, 400)
+  const body = (await rsp.json()) as ErrorRsp
+  assert.equal(body.status, 400)
+  assert.equal(body.error, 'request body too large')
+})
+
 test('wrong method', async () => {
   const rsp = await fetch(`${serverURL}/${Endpoint.IncCounter}`)
   assert.equal(rsp.status, 404)

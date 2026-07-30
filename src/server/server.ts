@@ -1,4 +1,3 @@
-import {once} from 'node:events'
 import type {IncomingMessage, ServerResponse} from 'node:http'
 import {context, reddit} from '@devvit/web/server'
 import type {
@@ -759,14 +758,33 @@ const MAX_BODY_BYTES = 64 * 1024 // generous cap for this app's small JSON paylo
 async function readJson<T>(reqMsg: IncomingMessage): Promise<T> {
   const chunks: Uint8Array[] = []
   let size = 0
-  reqMsg.on('data', chunk => {
-    size += chunk.length
-    if (size > MAX_BODY_BYTES) {
-      throw new Error('request body too large')
-    }
-    chunks.push(chunk)
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    reqMsg.on('data', chunk => {
+      if (settled) return
+      size += chunk.length
+      if (size > MAX_BODY_BYTES) {
+        settled = true
+        // Stop draining the oversized upload but leave the socket intact so
+        // onReq's catch-all can still write the clean 400 response — calling
+        // reqMsg.destroy() here would reset the connection instead.
+        reqMsg.pause()
+        reject(new Error('request body too large'))
+        return
+      }
+      chunks.push(chunk)
+    })
+    reqMsg.on('end', () => {
+      if (settled) return
+      settled = true
+      resolve()
+    })
+    reqMsg.on('error', err => {
+      if (settled) return
+      settled = true
+      reject(err)
+    })
   })
-  await once(reqMsg, 'end')
   let parsed: unknown
   try {
     parsed = JSON.parse(`${Buffer.concat(chunks)}`)

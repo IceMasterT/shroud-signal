@@ -165,7 +165,7 @@ function killClaimKey(matchId: string): string {
 
 const MATCH_KEY_TTL_SECONDS = 172800 // 48h — completed matches don't need to persist longer than that
 
-/** Sets an expiry on every Redis key this match owns, once it reaches a terminal ('complete') state. Per-player fire/ability-cooldown claim keys aren't included — they already self-expire (ability leases) or self-prune (windowed weapon-fire claims) and need no explicit cleanup. */
+/** Sets an expiry on every Redis key this match owns, once it reaches a terminal ('complete') state. Includes each participant's per-player fire/ability-cooldown claim keys: the windowed weapon-fire claim self-prunes its fields but never expires its own hash key, so it needs explicit cleanup; the ability lease already self-expires on its own short timescale, making its expire() a harmless no-op here that keeps the "every key" guarantee honest. */
 async function expireMatchKeys(matchId: string): Promise<void> {
   const keys = [
     matchKey(matchId),
@@ -179,6 +179,11 @@ async function expireMatchKeys(matchId: string): Promise<void> {
     roundEndClaimKey(matchId),
     killClaimKey(matchId),
   ]
+  const players = await getMatchPlayers(matchId)
+  for (const p of players) {
+    keys.push(fireCooldownClaimKey(matchId, p.userId))
+    keys.push(abilityClaimKey(matchId, p.userId))
+  }
   await Promise.all(keys.map(key => redis.expire(key, MATCH_KEY_TTL_SECONDS)))
 }
 
