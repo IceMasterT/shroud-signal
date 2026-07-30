@@ -56,7 +56,14 @@ export async function fetchGetCounter(): Promise<GetCounterRsp | undefined> {
     return
   }
 
-  return (await rsp.json()) as GetCounterRsp
+  try {
+    return (await rsp.json()) as GetCounterRsp
+  } catch (err) {
+    console.error(
+      `invalid JSON response: ${err instanceof Error ? err.message : err}`,
+    )
+    return
+  }
 }
 
 export async function fetchIncCounter(
@@ -86,7 +93,14 @@ export async function fetchIncCounter(
     return
   }
 
-  return (await rsp.json()) as IncCounterRsp
+  try {
+    return (await rsp.json()) as IncCounterRsp
+  } catch (err) {
+    console.error(
+      `invalid JSON response: ${err instanceof Error ? err.message : err}`,
+    )
+    return
+  }
 }
 
 async function getJson<T>(endpoint: string): Promise<T | undefined> {
@@ -101,7 +115,14 @@ async function getJson<T>(endpoint: string): Promise<T | undefined> {
     console.error(`HTTP status ${rsp.status}: ${rsp.statusText}`)
     return
   }
-  return (await rsp.json()) as T
+  try {
+    return (await rsp.json()) as T
+  } catch (err) {
+    console.error(
+      `invalid JSON response: ${err instanceof Error ? err.message : err}`,
+    )
+    return
+  }
 }
 
 async function postJson<Req, T>(
@@ -123,7 +144,14 @@ async function postJson<Req, T>(
     console.error(`HTTP status ${rsp.status}: ${rsp.statusText}`)
     return
   }
-  return (await rsp.json()) as T
+  try {
+    return (await rsp.json()) as T
+  } catch (err) {
+    console.error(
+      `invalid JSON response: ${err instanceof Error ? err.message : err}`,
+    )
+    return
+  }
 }
 
 export function fetchInit(): Promise<InitRsp | undefined> {

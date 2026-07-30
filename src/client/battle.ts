@@ -646,7 +646,10 @@ class BattleScene extends Phaser.Scene {
   update(_time: number, deltaMs: number): void {
     if (!this.ship || !this.self || !this.keys || this.selfEliminated) return
     const dt = Math.min(deltaMs / 1000, 0.05)
-    const spd = this.self.line ? SHIP_STATS[this.self.line].speedMul : 1
+    const spd =
+      this.self.line && SHIP_STATS[this.self.line]
+        ? SHIP_STATS[this.self.line].speedMul
+        : 1
 
     if (this.joystick?.active) {
       this.ship.rotation = this.joystick.angle
@@ -675,7 +678,7 @@ class BattleScene extends Phaser.Scene {
     // fire input (E key / ALT button) just falls back to the same weapon
     // rather than being a dead input.
     const nowMs = performance.now()
-    const myWeapons = SHIP_WEAPONS[this.self.line]
+    const myWeapons = SHIP_WEAPONS[this.self.line] ?? []
     const primaryMode = myWeapons[0]
     const secondaryMode = myWeapons[1]
     const spacePressed = this.keys.laser.isDown || this.touchPrimary?.isDown
@@ -1046,6 +1049,11 @@ function renderMatch(
       ) {
         lastRound = match.round
         scene.resetForNewRound(self, [...rosterA, ...rosterB])
+      } else {
+        scene.self.hull = self.hull
+        scene.self.kills = self.kills
+        scene.self.score = self.score
+        scene.updateHud()
       }
     } else if (isSpectator && match.round !== lastRound) {
       lastRound = match.round

@@ -90,6 +90,7 @@ export class SectorScene extends Phaser.Scene {
   private hudCount!: Phaser.GameObjects.Text
   private starGfx!: Phaser.GameObjects.Graphics
   private player: PlayerState | null = null
+  private disconnected = false
   private lastSentAt = 0
   private lastSentX = 0
   private lastSentY = 0
@@ -332,6 +333,25 @@ export class SectorScene extends Phaser.Scene {
 
     connectRealtime<RealtimeMsg>({
       channel: init.channel,
+      onConnect: () => {
+        if (this.disconnected) {
+          this.disconnected = false
+          if (this.player) {
+            this.hudName.setText(
+              `${this.player.username} · ${SHIP_LABEL[this.player.line]}`,
+            )
+          }
+          void this.resyncAfterReconnect()
+        }
+      },
+      onDisconnect: () => {
+        this.disconnected = true
+        if (this.player) {
+          this.hudName.setText(
+            `${this.player.username} · ${SHIP_LABEL[this.player.line]} (reconnecting…)`,
+          )
+        }
+      },
       onMessage: msg => this.handleRealtime(msg),
     })
 
@@ -611,6 +631,28 @@ export class SectorScene extends Phaser.Scene {
     )
   }
 
+  /** Re-fetches full sector state after a realtime reconnect, so a client that missed broadcasts while disconnected doesn't stay stuck showing stale positions/hull/score/mission state. Reuses the same idempotent update paths the initial connect and every realtime message already go through — no new sprite-management logic. */
+  private async resyncAfterReconnect(): Promise<void> {
+    const init = await fetchInit()
+    if (!init || !this.player) return
+    this.player = init.player
+    this.ship.setPosition(init.player.x, init.player.y)
+    this.ship.rotation = init.player.rotation
+    this.updateScoreHud()
+
+    const seenIds = new Set<string>()
+    for (const p of init.others) {
+      seenIds.add(p.userId)
+      this.spawnRemote(p)
+    }
+    for (const [userId] of this.others) {
+      if (!seenIds.has(userId)) this.removeRemote(userId)
+    }
+    this.updateCountHud()
+
+    if (init.mission) this.renderMission(init.mission)
+  }
+
   private renderNpc(npc: NpcState): void {
     const key =
       npc.kind === 'capital' ? 'npc-capital' : this.raiderKeyFor(npc.npcId)
@@ -768,7 +810,7 @@ export class SectorScene extends Phaser.Scene {
     }
 
     const nowMs = performance.now()
-    const weapons = this.player ? SHIP_WEAPONS[this.player.line] : []
+    const weapons = (this.player && SHIP_WEAPONS[this.player.line]) || []
     const primaryWeapon = weapons[0]
     const secondaryWeapon = weapons[1]
     if (primaryWeapon && (this.keys.laser.isDown || this.touchLaser?.isDown)) {
