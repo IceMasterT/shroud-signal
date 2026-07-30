@@ -71,6 +71,10 @@ const PLASMA_HALF_ANGLE = 0.25
 const FLAK_SHOTGUN_DAMAGE = 38
 const FLAK_HALF_ANGLE = 0.5
 
+const MAX_MINES_PER_PLAYER = 5 // bounds an unbounded minefield over a long session — mines have no natural expiry, unlike torpedoes
+const MAX_TORPEDOES_PER_PLAYER = 8 // generous ceiling — TORPEDO_RANGE/TORPEDO_SPEED means legitimate concurrent flight is normally 1-2; this only bites under abuse or a bug
+const TORPEDO_ZOMBIE_BACKSTOP_SECONDS = 60 // refreshed on every new torpedo; only fires if the whole hash goes untouched this long, which never happens during normal play (torpedoes always resolve in ~1-2s) — a pure crash-recovery backstop against orphaned entries from a process restart mid-flight
+
 /** Tuning for every hit-scan (instant, no travel time) weapon. Torpedo is handled separately — it's the only projectile with travel time. Exported so mission.ts's NPCs engage/fire at the exact same range/cooldown/damage a player with the same weapon would. */
 export const HITSCAN_TUNING: Record<
   Exclude<WeaponMode, 'torpedo'>,
@@ -380,22 +384,32 @@ export async function activateAbility(
   }
 
   if (shooter.line === 'miner') {
-    const mineId = `${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`
-    const mine: Mine = {
-      mineId,
-      ownerId: userId,
-      team: 'A', // Sector Mode has no teams; movePlayer excludes self-triggering by ownerId instead.
-      x: shooter.x,
-      y: shooter.y,
+    const existingMines = await redis.hGetAll(minesKey(postId))
+    const ownedCount = Object.values(existingMines ?? {}).filter(json => {
+      try {
+        return (JSON.parse(json) as Mine).ownerId === userId
+      } catch {
+        return false
+      }
+    }).length
+    if (ownedCount < MAX_MINES_PER_PLAYER) {
+      const mineId = `${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`
+      const mine: Mine = {
+        mineId,
+        ownerId: userId,
+        team: 'A', // Sector Mode has no teams; movePlayer excludes self-triggering by ownerId instead.
+        x: shooter.x,
+        y: shooter.y,
+      }
+      await redis.hSet(minesKey(postId), {[mineId]: JSON.stringify(mine)})
+      await broadcast(postId, {
+        type: 'mine_placed',
+        mineId,
+        ownerId: userId,
+        x: shooter.x,
+        y: shooter.y,
+      })
     }
-    await redis.hSet(minesKey(postId), {[mineId]: JSON.stringify(mine)})
-    await broadcast(postId, {
-      type: 'mine_placed',
-      mineId,
-      ownerId: userId,
-      x: shooter.x,
-      y: shooter.y,
-    })
   }
 
   await broadcast(postId, {type: 'ability', userId, line: shooter.line})
@@ -651,6 +665,17 @@ export async function fireWeapon(
   const impactX = x + dirX * travelDistance
   const impactY = y + dirY * travelDistance
   const torpedoId = `${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  const existingTorpedoes = await redis.hGetAll(torpedoesKey(postId))
+  const ownedTorpedoCount = Object.values(existingTorpedoes ?? {}).filter(
+    json => {
+      try {
+        return (JSON.parse(json) as PendingTorpedo).shooterId === shooterId
+      } catch {
+        return false
+      }
+    },
+  ).length
+  if (ownedTorpedoCount >= MAX_TORPEDOES_PER_PLAYER) return
   const pending: PendingTorpedo = {
     shooterId,
     x,
@@ -663,6 +688,7 @@ export async function fireWeapon(
   await redis.hSet(torpedoesKey(postId), {
     [torpedoId]: JSON.stringify(pending),
   })
+  await redis.expire(torpedoesKey(postId), TORPEDO_ZOMBIE_BACKSTOP_SECONDS)
   await broadcast(postId, {
     type: 'shot',
     userId: shooterId,

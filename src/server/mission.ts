@@ -44,6 +44,21 @@ function tickClaimKey(postId: string): string {
   return `sector:${postId}:tick-claim`
 }
 
+const MISSION_KEY_TTL_SECONDS = 172800 // 48h — resolved missions don't need to persist longer than that; the sector's own ongoing PvP state (players/hull/score/etc. in sector.ts) is untouched by this
+
+/** Sets an expiry on every mission-specific Redis key once the mission resolves (won/lost) — the sector's other, ongoing PvP state is a separate lifetime and is never touched here. */
+async function expireMissionKeys(postId: string): Promise<void> {
+  const keys = [
+    missionKey(postId),
+    npcsKey(postId),
+    npcHullKey(postId),
+    starbaseHullKey(postId),
+    waveClaimKey(postId),
+    tickClaimKey(postId),
+  ]
+  await Promise.all(keys.map(key => redis.expire(key, MISSION_KEY_TTL_SECONDS)))
+}
+
 const STARBASE_MAX_HULL = 500
 const RAIDER_HULL = 60
 const CAPITAL_HULL = 400
@@ -288,6 +303,7 @@ async function spawnNextWaveIfClear(
   if (outcome !== 'active') {
     const resolved: Mission = {...mission, status: outcome}
     await redis.set(missionKey(postId), JSON.stringify(resolved))
+    await expireMissionKeys(postId)
     return resolved
   }
   const nextWave = mission.wave + 1
@@ -452,6 +468,7 @@ export async function tickMission(postId: string): Promise<void> {
   if (outcome === 'lost') {
     mission = {...mission, status: 'lost'}
     await redis.set(missionKey(postId), JSON.stringify(mission))
+    await expireMissionKeys(postId)
   }
 
   await broadcastMission(postId, await toMissionRsp(postId, mission))

@@ -163,6 +163,25 @@ function killClaimKey(matchId: string): string {
   return `match:${matchId}:kill-claim`
 }
 
+const MATCH_KEY_TTL_SECONDS = 172800 // 48h — completed matches don't need to persist longer than that
+
+/** Sets an expiry on every Redis key this match owns, once it reaches a terminal ('complete') state. Per-player fire/ability-cooldown claim keys aren't included — they already self-expire (ability leases) or self-prune (windowed weapon-fire claims) and need no explicit cleanup. */
+async function expireMatchKeys(matchId: string): Promise<void> {
+  const keys = [
+    matchKey(matchId),
+    matchPlayersKey(matchId),
+    matchHullKey(matchId),
+    matchEliminatedKey(matchId),
+    matchKillsKey(matchId),
+    matchMinesKey(matchId),
+    matchTorpedoesKey(matchId),
+    matchSeatsKey(matchId),
+    roundEndClaimKey(matchId),
+    killClaimKey(matchId),
+  ]
+  await Promise.all(keys.map(key => redis.expire(key, MATCH_KEY_TTL_SECONDS)))
+}
+
 function randomId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
@@ -989,6 +1008,7 @@ async function endRound(match: Match, winner: Team | 'tie'): Promise<Match> {
     match.winner = seriesWinner
   }
   await saveMatch(match)
+  if (match.status === 'complete') await expireMatchKeys(match.matchId)
   await broadcastMatch(match.matchId, {
     type: 'round_end',
     winner,
@@ -1036,6 +1056,7 @@ export async function tickMatch(match: Match): Promise<Match> {
         match.status = 'complete'
         match.winner = countA > 0 ? 'A' : countB > 0 ? 'B' : 'tie'
         await saveMatch(match)
+        await expireMatchKeys(match.matchId)
         return match
       }
       return await startRound(match)

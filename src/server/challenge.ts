@@ -11,6 +11,7 @@ const MIN_PLAYER_CAP = 1
 const MAX_PLAYER_CAP = 10
 const MIN_WARMUP_MIN = 1
 const MAX_WARMUP_MIN = 5
+const CHALLENGE_KEY_TTL_SECONDS = 172800 // 48h
 
 function challengeKey(challengeId: string): string {
   return `challenge:${challengeId}`
@@ -120,6 +121,10 @@ export async function respondChallenge(
     }
     challenge.status = 'declined'
     await saveChallenge(challenge)
+    await redis.expire(
+      challengeKey(challenge.challengeId),
+      CHALLENGE_KEY_TTL_SECONDS,
+    )
     return {challengeStatus: challenge.status, matchId: null}
   }
 
@@ -158,5 +163,9 @@ export async function respondChallenge(
   challenge.arenaUrlA = match.arenaUrlA
   challenge.arenaUrlB = match.arenaUrlB
   await saveChallenge(challenge)
+  await redis.expire(
+    challengeKey(challenge.challengeId),
+    CHALLENGE_KEY_TTL_SECONDS,
+  )
   return {challengeStatus: challenge.status, matchId: match.matchId}
 }
