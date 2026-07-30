@@ -21,10 +21,12 @@ function randomId(): string {
 }
 
 export function clampPlayerCap(n: number): number {
+  if (!Number.isFinite(n)) return MIN_PLAYER_CAP
   return Math.round(Math.max(MIN_PLAYER_CAP, Math.min(MAX_PLAYER_CAP, n)))
 }
 
 export function clampWarmupMinutes(n: number): number {
+  if (!Number.isFinite(n)) return MIN_WARMUP_MIN
   return Math.round(Math.max(MIN_WARMUP_MIN, Math.min(MAX_WARMUP_MIN, n)))
 }
 

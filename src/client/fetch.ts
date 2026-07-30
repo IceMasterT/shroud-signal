@@ -139,8 +139,8 @@ export function fetchLeave(): Promise<Response> {
   return fetch(Endpoint.Leave, {method: 'POST', keepalive: true})
 }
 
-export function fetchScore(req: ScoreReq): Promise<ScoreRsp | undefined> {
-  return postJson<ScoreReq, ScoreRsp>(Endpoint.Score, req)
+export function fetchScore(): Promise<ScoreRsp | undefined> {
+  return postJson<ScoreReq, ScoreRsp>(Endpoint.Score, {})
 }
 
 export function fetchFire(req: FireReq): Promise<FireRsp | undefined> {

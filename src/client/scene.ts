@@ -344,7 +344,7 @@ export class SectorScene extends Phaser.Scene {
       delay: 20000,
       loop: true,
       callback: () => {
-        void fetchScore({amount: 5}).then(r => {
+        void fetchScore().then(r => {
           if (r && this.player) {
             this.player.score = r.score
             this.updateScoreHud()

@@ -36,7 +36,6 @@ import {
   type PostKind,
   type RespondChallengeReq,
   type RespondChallengeRsp,
-  type ScoreReq,
   type ScoreRsp,
   type ScrimmageJoinReq,
   type ScrimmageJoinRsp,
@@ -129,9 +128,10 @@ export async function onReq(
   try {
     await route(reqMsg, rspMsg)
   } catch (err) {
-    const msg = `server error; ${err instanceof Error ? err.stack : err}`
-    console.error(msg)
-    writeJson<ErrorRsp>(500, {error: msg, status: 500}, rspMsg)
+    const stack = err instanceof Error ? err.stack : String(err)
+    console.error(`server error; ${stack}`)
+    const message = err instanceof Error ? err.message : 'bad request'
+    writeJson<ErrorRsp>(400, {error: message, status: 400}, rspMsg)
   }
 }
 
@@ -169,7 +169,7 @@ async function route(
         rsp = await routeLeave()
         break
       case Endpoint.Score:
-        rsp = await routeScore(reqMsg)
+        rsp = await routeScore()
         break
       case Endpoint.Fire:
         rsp = await routeFire(reqMsg)
@@ -238,10 +238,15 @@ async function routeGetCounter(): Promise<GetCounterRsp> {
   return {count: await dbGetCounter(t3)}
 }
 
-async function routeInc(reqMsg: IncomingMessage): Promise<IncCounterRsp> {
+async function routeInc(
+  reqMsg: IncomingMessage,
+): Promise<IncCounterRsp | ErrorRsp> {
   const t3 = context.postId
   if (!t3) throw Error('no t3')
   const req = await readJson<IncCounterReq>(reqMsg)
+  if (!isFiniteNumber(req.amount)) {
+    return {error: 'invalid counter payload', status: 400}
+  }
   return {count: await dbIncCounter(t3, req.amount)}
 }
 
@@ -329,25 +334,21 @@ async function routeLeave(): Promise<UiResponse | ErrorRsp> {
   return {}
 }
 
-async function routeScore(
-  reqMsg: IncomingMessage,
-): Promise<ScoreRsp | ErrorRsp> {
+const SURVIVAL_SCORE = 5 // fixed reward for the client's periodic "still active" ping — see routeScore
+
+async function routeScore(): Promise<ScoreRsp | ErrorRsp> {
   const postId = context.postId
   const userId = context.userId
   const subredditId = context.subredditId
   if (!postId) return {error: 'no postId', status: 400}
   if (!userId) return {error: 'must be logged in', status: 401}
   const username = context.username ?? 'anonymous'
-  const req = await readJson<ScoreReq>(reqMsg)
-  if (!isFiniteNumber(req.amount)) {
-    return {error: 'invalid score payload', status: 400}
-  }
   const score = await addScore(
     postId,
     subredditId,
     userId,
     username,
-    req.amount,
+    SURVIVAL_SCORE,
   )
   return {score}
 }
@@ -448,6 +449,12 @@ async function routeChallengeRespond(
   if (kind?.kind !== 'challenge') {
     return {error: 'not a challenge post', status: 400}
   }
+  if (!(await isRequesterModeratorSafe())) {
+    return {
+      error: 'only a moderator of this subreddit can respond to a challenge',
+      status: 403,
+    }
+  }
   const req = await readJson<RespondChallengeReq>(reqMsg)
   const validActions: ChallengeAction[] = [
     'accept',
@@ -460,6 +467,12 @@ async function routeChallengeRespond(
   }
   if (req.squadRule !== undefined && !SQUAD_RULES.includes(req.squadRule)) {
     return {error: 'invalid squad rule', status: 400}
+  }
+  if (
+    (req.playerCap !== undefined && !isFiniteNumber(req.playerCap)) ||
+    (req.warmupMinutes !== undefined && !isFiniteNumber(req.warmupMinutes))
+  ) {
+    return {error: 'invalid challenge response payload', status: 400}
   }
   try {
     const result = await respondChallenge(
@@ -636,7 +649,12 @@ async function routeScrimmageCreate(
   if (req.presetId !== null && !(req.presetId in SQUAD_PRESETS)) {
     return {error: 'invalid preset', status: 400}
   }
-  if (!Array.isArray(req.whitelist)) {
+  const MAX_WHITELIST_SIZE = 100
+  if (
+    !Array.isArray(req.whitelist) ||
+    req.whitelist.length > MAX_WHITELIST_SIZE ||
+    !req.whitelist.every(u => typeof u === 'string')
+  ) {
     return {error: 'invalid whitelist', status: 400}
   }
   try {
@@ -736,11 +754,29 @@ async function routeAppInstall(): Promise<TriggerResponse> {
   return {}
 }
 
+const MAX_BODY_BYTES = 64 * 1024 // generous cap for this app's small JSON payloads
+
 async function readJson<T>(reqMsg: IncomingMessage): Promise<T> {
   const chunks: Uint8Array[] = []
-  reqMsg.on('data', chunk => chunks.push(chunk))
+  let size = 0
+  reqMsg.on('data', chunk => {
+    size += chunk.length
+    if (size > MAX_BODY_BYTES) {
+      throw new Error('request body too large')
+    }
+    chunks.push(chunk)
+  })
   await once(reqMsg, 'end')
-  return JSON.parse(`${Buffer.concat(chunks)}`)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(`${Buffer.concat(chunks)}`)
+  } catch {
+    throw new Error('invalid JSON body')
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('request body must be a JSON object')
+  }
+  return parsed as T
 }
 
 function writeJson<T extends PartialJsonValue>(

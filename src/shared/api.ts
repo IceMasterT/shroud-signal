@@ -336,8 +336,8 @@ export type RealtimeMsg =
 export type LeaderboardEntry = {username: string; score: number; kills: number}
 export type LeaderboardRsp = {entries: LeaderboardEntry[]}
 
-/** Increment the caller's score (e.g. after a scripted action) by a signed amount. */
-export type ScoreReq = {amount: number}
+/** No payload — the score reward is a fixed server-side constant, not client-supplied (see routeScore). */
+export type ScoreReq = Record<string, never>
 export type ScoreRsp = {score: number}
 
 // ── Shroud Signal: subreddit vs subreddit battles ───────────────────────────
