@@ -314,11 +314,19 @@ export async function applyPlayerDamageToNpc(
     await redis.hIncrBy(npcHullKey(postId), npc.npcId, -damage),
   )
   if (!mission.participants.includes(shooterUserId)) {
-    mission = {
-      ...mission,
-      participants: [...mission.participants, shooterUserId],
+    const freshRaw = await redis.get(missionKey(postId))
+    if (freshRaw) {
+      const fresh = JSON.parse(freshRaw) as Mission
+      if (!fresh.participants.includes(shooterUserId)) {
+        mission = {
+          ...fresh,
+          participants: [...fresh.participants, shooterUserId],
+        }
+        await redis.set(missionKey(postId), JSON.stringify(mission))
+      } else {
+        mission = fresh // someone else already recorded this participant; adopt their fresher mission state anyway
+      }
     }
-    await redis.set(missionKey(postId), JSON.stringify(mission))
   }
 
   if (hull > 0) {

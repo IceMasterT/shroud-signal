@@ -137,6 +137,21 @@ function matchTorpedoesKey(matchId: string): string {
   return `match:${matchId}:torpedoes`
 }
 
+/** Atomic per-team seat counter — reserved before any other join logic runs, rolled back if a later check in joinMatch rejects the join, so it always reflects real seated players despite joinMatch's several throw-on-invalid paths below the reservation. */
+function matchSeatsKey(matchId: string): string {
+  return `match:${matchId}:seats`
+}
+
+/** Atomic per-round claim so a team wipe processed by two near-simultaneous kills only resolves the round once — keyed by match.round, which increments every round so no cleanup is needed between rounds. */
+function roundEndClaimKey(matchId: string): string {
+  return `match:${matchId}:round-end-claim`
+}
+
+/** Atomic per-round, per-target kill-processing claim — a match player's hull is never removed after death (unlike sector.ts's NPCs), so without this, any later hit on an already-dead target would re-run the whole kill path (double kill credit, corrupted elimination timestamp). Cleared each round in startRound alongside matchEliminatedKey/matchMinesKey/matchTorpedoesKey. */
+function killClaimKey(matchId: string): string {
+  return `match:${matchId}:kill-claim`
+}
+
 function randomId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
@@ -325,9 +340,45 @@ export async function joinMatch(
   const existing = await redis.hGet(matchPlayersKey(matchId), userId)
   if (existing) return JSON.parse(existing) as PlayerState
 
+  const seatCount = await redis.hIncrBy(matchSeatsKey(matchId), side, 1)
+  if (seatCount > match.playerCap) {
+    await redis.hIncrBy(matchSeatsKey(matchId), side, -1) // release the reservation — this team is actually full
+    throw new Error('team is full')
+  }
+  try {
+    await joinMatchAssignSeat(
+      match,
+      side,
+      userId,
+      username,
+      snoovatar,
+      line,
+      mode,
+      presetId,
+    )
+  } catch (err) {
+    await redis.hIncrBy(matchSeatsKey(matchId), side, -1) // roll back the reservation — join failed for another reason (preset full, line full, etc.)
+    throw err
+  }
   const players = await getMatchPlayers(matchId)
+  const player = players.find(p => p.userId === userId)
+  if (!player) throw new Error('join failed unexpectedly')
+  return player
+}
+
+/** The rest of joinMatch's original logic (preset/line assignment, player-object creation and persistence) — split out so the seat-reservation wrapper above can roll back on any throw from this part. */
+async function joinMatchAssignSeat(
+  match: Match,
+  side: Team,
+  userId: string,
+  username: string,
+  snoovatar: string | undefined,
+  line: ShipLine,
+  mode: 'individual' | 'preset',
+  presetId: PresetId | null,
+): Promise<void> {
+  const players = await getMatchPlayers(match.matchId)
   const teammates = players.filter(p => p.team === side)
-  if (teammates.length >= match.playerCap) throw new Error('team is full')
 
   const committedMode =
     (side === 'A' ? match.joinModeA : match.joinModeB) ?? null
@@ -391,10 +442,11 @@ export async function joinMatch(
     abilityActiveUntil: 0,
     team: side,
   }
-  await redis.hSet(matchPlayersKey(matchId), {[userId]: JSON.stringify(player)})
-  await redis.hSet(matchHullKey(matchId), {[userId]: String(maxHull)})
-  await broadcastMatch(matchId, {type: 'roster', player})
-  return player
+  await redis.hSet(matchPlayersKey(match.matchId), {
+    [userId]: JSON.stringify(player),
+  })
+  await redis.hSet(matchHullKey(match.matchId), {[userId]: String(maxHull)})
+  await broadcastMatch(match.matchId, {type: 'roster', player})
 }
 
 /**
@@ -794,6 +846,9 @@ async function applyDamageInMatch(
   })
   if (hull > 0) return
 
+  const claimed = await redis.hSetNX(killClaimKey(matchId), target.userId, '1')
+  if (claimed !== 1) return // already processed this elimination — this hit landed on an already-dead target
+
   await redis.zAdd(matchEliminatedKey(matchId), {
     member: target.userId,
     score: Date.now(),
@@ -821,6 +876,7 @@ async function startRound(match: Match): Promise<Match> {
   await redis.del(matchEliminatedKey(match.matchId))
   await redis.del(matchMinesKey(match.matchId))
   await redis.del(matchTorpedoesKey(match.matchId))
+  await redis.del(killClaimKey(match.matchId))
   for (const p of players) {
     if (!p.team) continue
     const spawn = randSpawn(p.team)
@@ -883,6 +939,13 @@ async function teamWipeElapsedMs(
 }
 
 async function endRound(match: Match, winner: Team | 'tie'): Promise<Match> {
+  const claimed = await redis.hSetNX(
+    roundEndClaimKey(match.matchId),
+    String(match.round),
+    '1',
+  )
+  if (claimed !== 1) return match // another concurrent call already resolved this round
+
   const elapsed = Date.now() - match.roundStartedAt
   const loserWipedAtMs =
     winner === 'tie'

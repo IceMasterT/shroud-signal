@@ -6,6 +6,7 @@ import type {
   WeaponMode,
 } from '../shared/api.ts'
 import {
+  ABILITY_COOLDOWN_MS,
   AUTOCANNON_COOLDOWN_MS,
   AUTOCANNON_RANGE,
   BULWARK_DURATION_MS,
@@ -114,6 +115,16 @@ export function sectorChannel(postId: string): string {
 
 function playersKey(postId: string): string {
   return `sector:${postId}:players`
+}
+
+/** Atomic per-player, per-weapon-slot windowed claim so concurrent /api/fire requests can't both pass the cooldown check — see fireWeapon. Mirrors mission.ts's tickClaimKey pattern. */
+function fireCooldownClaimKey(postId: string, userId: string): string {
+  return `sector:${postId}:fire-claim:${userId}`
+}
+
+/** Atomic per-player ability-cooldown lease — NX-claim with the ability's own cooldown as its expiration, so concurrent /api/ability requests can't both pass the cooldown check. Ability cooldowns are tens of seconds, so whole-second TTL rounding here is negligible (unlike weapon fire — see fireCooldownClaimKey). */
+function abilityClaimKey(postId: string, userId: string): string {
+  return `sector:${postId}:ability-claim:${userId}`
 }
 
 /** Atomic per-player counters — hull/score are read-modify-write races if
@@ -333,6 +344,12 @@ export async function activateAbility(
   if (!abilityReady(shooter.lastAbilityAt, shooter.line, now)) {
     throw new Error('ability is on cooldown')
   }
+  const cooldownMs = ABILITY_COOLDOWN_MS[shooter.line]
+  const claimed = await redis.set(abilityClaimKey(postId, userId), '1', {
+    nx: true,
+    expiration: new Date(now + cooldownMs),
+  })
+  if (!claimed) throw new Error('ability is on cooldown')
   shooter.lastAbilityAt = now
 
   if (shooter.line === 'fighter' || shooter.line === 'transport') {
@@ -533,13 +550,19 @@ export async function fireWeapon(
   const isPrimary = mode === firstWeapon
   const cooldownMs =
     mode === 'torpedo' ? TORPEDO_COOLDOWN_MS : HITSCAN_TUNING[mode].cooldownMs
-  if (isPrimary) {
-    if (now - (shooter.lastLaserAt ?? 0) < cooldownMs) return
-    shooter.lastLaserAt = now
-  } else {
-    if (now - (shooter.lastTorpedoAt ?? 0) < cooldownMs) return
-    shooter.lastTorpedoAt = now
-  }
+  const slot = isPrimary ? 'primary' : 'secondary'
+  const windowId = Math.floor(now / cooldownMs)
+  const claimed = await redis.hSetNX(
+    fireCooldownClaimKey(postId, shooterId),
+    `${slot}:${windowId}`,
+    '1',
+  )
+  if (claimed !== 1) return // already fired this weapon-slot's cooldown window
+  await redis.hDel(fireCooldownClaimKey(postId, shooterId), [
+    `${slot}:${windowId - 1}`,
+  ]) // bound the hash to ~1-2 fields per slot, self-pruning
+  if (isPrimary) shooter.lastLaserAt = now
+  else shooter.lastTorpedoAt = now
   await redis.hSet(playersKey(postId), {[shooterId]: JSON.stringify(shooter)})
 
   const {x, y, rotation} = shooter

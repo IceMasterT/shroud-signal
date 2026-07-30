@@ -137,10 +137,14 @@ export async function grantCombatReward(
   return {xpGained: reward.xp, creditsGained: reward.credits}
 }
 
-/** Applies the small currency-loss death penalty, atomically. */
+/** Applies the small currency-loss death penalty. The percentage itself still depends on a fresh-enough read of current credits (an inherent property of a proportional penalty, not fixable with a flat atomic increment alone) — but the write is now self-correcting: if a concurrent penalty from another active sector post races this one and the combined deltas would push the balance negative, this clamps it back to 0 immediately via the same atomic incrBy, rather than leaving a visible negative balance until some unrelated later call happens to correct it. */
 export async function applyDeathPenaltyFor(userId: string): Promise<void> {
   const credits = await readCredits(userId)
   const penalized = applyDeathPenalty(credits)
   const delta = penalized - credits
-  if (delta !== 0) await redis.incrBy(creditsKey(userId), delta)
+  if (delta === 0) return
+  const after = await redis.incrBy(creditsKey(userId), delta)
+  if (after < 0) {
+    await redis.incrBy(creditsKey(userId), -after)
+  }
 }
