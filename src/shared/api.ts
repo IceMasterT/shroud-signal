@@ -31,7 +31,7 @@ export const SHIP_LINES: readonly ShipLine[] = [
  */
 export const LASER_RANGE = 420
 export const LASER_COOLDOWN_MS = 350
-/** Free-play sectors only — every pilot there has plain laser + torpedo. Battle arenas use MISSILE_SPEED/MISSILE_COOLDOWN_MS instead (Fighter's second weapon), tuned independently. */
+/** Free-play sectors: Fighter's torpedo. Battle arenas use MISSILE_SPEED/MISSILE_COOLDOWN_MS instead (Fighter's second weapon there), tuned independently. */
 export const TORPEDO_RANGE = 640
 export const TORPEDO_SPEED = 600 // world units/sec
 export const TORPEDO_COOLDOWN_MS = 900
@@ -66,9 +66,10 @@ export const WEAPON_MODES: readonly WeaponMode[] = [
 ]
 
 /**
- * Each battle-arena line carries its own signature weapon (Fighter alone
- * carries two — laser plus missile). Free-play sectors don't use this;
- * every pilot there has plain laser + torpedo.
+ * Each line carries its own signature weapon (Fighter alone carries two —
+ * laser plus a second weapon: missile in battle arenas, torpedo in
+ * free-play sectors, tuned independently per mode). Free-play sectors adopt
+ * this same per-line kit, not a flat laser+torpedo loadout.
  */
 export const SHIP_WEAPONS: Record<ShipLine, readonly WeaponMode[]> = {
   fighter: ['laser', 'torpedo'],

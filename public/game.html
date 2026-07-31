@@ -21,10 +21,21 @@
       width: 100%;
       height: 100%;
     }
+    #brand-watermark {
+      position: fixed;
+      left: 10px;
+      bottom: 10px;
+      width: 36px;
+      height: 36px;
+      opacity: 0.8;
+      pointer-events: none;
+      z-index: 40;
+    }
     </style>
   </head>
   <body>
     <div id="game-root"></div>
+    <img id="brand-watermark" src="assets/logo-mark.png" alt="Shroud Signal">
     <script src="game.js" type="module"></script>
   </body>
 </html>
