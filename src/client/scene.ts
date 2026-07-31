@@ -14,6 +14,8 @@ import {
   LASER_COOLDOWN_MS,
   LASER_RANGE,
   PLASMA_COOLDOWN_MS,
+  SHIP_LINES,
+  SHIP_TIER_ASSET,
   SHIP_WEAPONS,
   TORPEDO_COOLDOWN_MS,
   TORPEDO_RANGE,
@@ -110,11 +112,16 @@ export class SectorScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.image('fighter', 'assets/ships/fighter.webp')
-    this.load.image('miner', 'assets/ships/miner.webp')
-    this.load.image('transport', 'assets/ships/transport.webp')
-    this.load.image('pathfinder', 'assets/ships/pathfinder.webp')
-    this.load.image('tender', 'assets/ships/tender.webp')
+    // Every pilot is Mk.1 today — there's no ship-tier upgrade path yet, so
+    // this always loads each line's tier-1 art. Once tiers become live,
+    // this needs to load (or swap to) the pilot's actual shipTier instead.
+    for (const line of SHIP_LINES) {
+      const asset = SHIP_TIER_ASSET[line]
+      this.load.image(
+        line,
+        `assets/ships/${asset.folder}/${asset.prefix}-mk.1.webp`,
+      )
+    }
     this.load.image(
       'npc-raider-1',
       'assets/ships/Menta-Pirates/pirate_standard/1.webp',
