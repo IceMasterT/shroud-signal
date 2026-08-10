@@ -418,45 +418,53 @@ export async function tickMission(postId: string): Promise<void> {
   ])
   if (npcs.length === 0) return
 
-  for (const npc of npcs) {
-    const tuning = HITSCAN_TUNING[npc.weapon]
-    const aggroRange = tuning.range * NPC_AGGRO_RANGE_MUL
-    const target = nearestPlayer(npc, players, aggroRange)
-    const targetX = target ? target.x : 0
-    const targetY = target ? target.y : 0
-    npc.targetUserId = target ? target.userId : null
+  // Each NPC's movement/fire/persistence is independent of every other NPC
+  // in this tick (targeting only reads the immutable `players` snapshot), so
+  // they run concurrently — a serial await-per-NPC loop here turned every
+  // movePlayer/fireWeapon call into O(NPCs) sequential Redis round-trips,
+  // which made input feel laggier with every wave (3 raiders on wave 1, up
+  // to 9 plus a capital ship by wave 7).
+  await Promise.all(
+    npcs.map(async npc => {
+      const tuning = HITSCAN_TUNING[npc.weapon]
+      const aggroRange = tuning.range * NPC_AGGRO_RANGE_MUL
+      const target = nearestPlayer(npc, players, aggroRange)
+      const targetX = target ? target.x : 0
+      const targetY = target ? target.y : 0
+      npc.targetUserId = target ? target.userId : null
 
-    const dx = targetX - npc.x
-    const dy = targetY - npc.y
-    const distance = Math.hypot(dx, dy)
-    const step = NPC_MOVE_UNITS_PER_SEC * dt
-    if (distance > step && distance > 0) {
-      npc.x += (dx / distance) * step
-      npc.y += (dy / distance) * step
-    } else {
-      npc.x = targetX
-      npc.y = targetY
-    }
-    npc.rotation = Math.atan2(dy, dx) + Math.PI / 2
-
-    const withinRange = distance <= tuning.range
-    const cooledDown = now - npc.lastFiredAt >= tuning.cooldownMs
-    if (withinRange && cooledDown) {
-      npc.lastFiredAt = now
-      const damage =
-        npc.kind === 'capital'
-          ? tuning.damage * CAPITAL_DAMAGE_MUL
-          : tuning.damage
-      if (target) {
-        await applyNpcDamageToPlayer(postId, npc.npcId, target, damage)
+      const dx = targetX - npc.x
+      const dy = targetY - npc.y
+      const distance = Math.hypot(dx, dy)
+      const step = NPC_MOVE_UNITS_PER_SEC * dt
+      if (distance > step && distance > 0) {
+        npc.x += (dx / distance) * step
+        npc.y += (dy / distance) * step
       } else {
-        await redis.incrBy(starbaseHullKey(postId), -damage)
+        npc.x = targetX
+        npc.y = targetY
       }
-    }
-    if ((await redis.hGet(npcsKey(postId), npc.npcId)) !== undefined) {
-      await redis.hSet(npcsKey(postId), {[npc.npcId]: JSON.stringify(npc)})
-    }
-  }
+      npc.rotation = Math.atan2(dy, dx) + Math.PI / 2
+
+      const withinRange = distance <= tuning.range
+      const cooledDown = now - npc.lastFiredAt >= tuning.cooldownMs
+      if (withinRange && cooledDown) {
+        npc.lastFiredAt = now
+        const damage =
+          npc.kind === 'capital'
+            ? tuning.damage * CAPITAL_DAMAGE_MUL
+            : tuning.damage
+        if (target) {
+          await applyNpcDamageToPlayer(postId, npc.npcId, target, damage)
+        } else {
+          await redis.incrBy(starbaseHullKey(postId), -damage)
+        }
+      }
+      if ((await redis.hGet(npcsKey(postId), npc.npcId)) !== undefined) {
+        await redis.hSet(npcsKey(postId), {[npc.npcId]: JSON.stringify(npc)})
+      }
+    }),
+  )
 
   const starbaseHull = await readStarbaseHull(postId)
   const outcome = evaluateMissionOutcome(

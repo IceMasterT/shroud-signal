@@ -774,14 +774,15 @@ async function enemyRoster(
   matchId: string,
   shooterTeam: Team | null,
 ): Promise<PlayerState[]> {
-  const players = await getMatchPlayers(matchId)
-  const alive: PlayerState[] = []
-  for (const p of players) {
-    if (p.team === shooterTeam) continue
-    if (await isEliminated(matchId, p.userId)) continue
-    alive.push(p)
-  }
-  return alive
+  const players = await getMatchPlayers(matchId).then(all =>
+    all.filter(p => p.team !== shooterTeam),
+  )
+  // Runs on every shot, so a serial await-per-player elimination check here
+  // added a Redis round-trip per enemy to every fire-weapon response.
+  const eliminated = await Promise.all(
+    players.map(p => isEliminated(matchId, p.userId)),
+  )
+  return players.filter((_p, i) => !eliminated[i])
 }
 
 async function isEliminated(matchId: string, userId: string): Promise<boolean> {
@@ -823,13 +824,13 @@ export async function activateAbility(
   })
 
   if (shooter.line === 'tender') {
-    const players = await getMatchPlayers(matchId)
-    const allies: PlayerState[] = []
-    for (const p of players) {
-      if (p.team !== shooter.team) continue
-      if (await isEliminated(matchId, p.userId)) continue
-      allies.push(p)
-    }
+    const teammates = await getMatchPlayers(matchId).then(all =>
+      all.filter(p => p.team === shooter.team),
+    )
+    const eliminated = await Promise.all(
+      teammates.map(p => isEliminated(matchId, p.userId)),
+    )
+    const allies = teammates.filter((_p, i) => !eliminated[i])
     const target = nearestAlly(allies, shooter, TENDER_HEAL_RANGE)
     if (target) {
       const maxHull = maxHullFor(target.line)
